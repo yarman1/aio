@@ -1,10 +1,48 @@
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { RedisModule } from './redis/redis.module';
+import { ConfigModule } from '@nestjs/config';
+import { AuthModule } from './auth/auth.module';
+import { PrismaModule } from './prisma/prisma.module';
+import { UsersModule } from './users/users.module';
+import { MailModule } from './mail/mail.module';
+import { ThrottlerModule } from '@nestjs/throttler';
+import Redis from 'ioredis';
+import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
+import { APP_GUARD } from '@nestjs/core';
+import { AtGuard, RolesGuard } from './auth/guards';
 
 @Module({
-  imports: [],
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    AuthModule,
+    PrismaModule,
+    UsersModule,
+    MailModule,
+    RedisModule.forRoot(),
+    ThrottlerModule.forRootAsync({
+      inject: ['REDIS_CLIENT'],
+      useFactory: (redisClient: Redis) => ({
+        throttlers: [
+          { name: 'short', ttl: 60, limit: 10 },
+          { name: 'medium', ttl: 60, limit: 10 },
+        ],
+        storage: new ThrottlerStorageRedisService(redisClient),
+      }),
+    }),
+  ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: AtGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
+    },
+  ],
 })
 export class AppModule {}

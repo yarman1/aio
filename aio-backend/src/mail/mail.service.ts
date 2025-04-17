@@ -32,6 +32,20 @@ export class MailService {
     });
   }
 
+  async sendConfirmationEmail(email: string, code: string) {
+    const htmlContent = this.readHtmlFile('confirmation-code.html').replace(
+      '{{code}}',
+      `${code}`,
+    );
+
+    await this.transporter.sendMail({
+      from: '"AIO administration" <aionotification1@gmail.com>',
+      to: email,
+      subject: 'Email confirmation request',
+      html: htmlContent,
+    });
+  }
+
   private readHtmlFile(filename: string) {
     const path = `${__dirname}/templates/${filename}`;
     return fs.readFileSync(path, 'utf-8');

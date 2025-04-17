@@ -27,6 +27,9 @@ import {
 import { RecoveryThrottlerGuard, RtGuard } from './guards';
 import { BlockCheckInterceptor } from './interceptors/block-check.interceptor';
 import { JwtRtPayload } from './types';
+import { ConfirmationFlagInterceptor } from './interceptors/confirmation-flag.interceptor';
+import { ConfirmationThrottleGuard } from './guards/confirmation-throttle.guard';
+import { ConfirmEmailDto } from './dto/confirm-email.dto';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -123,13 +126,35 @@ export class AuthController {
     }
   }
 
+  @UseInterceptors(ConfirmationFlagInterceptor)
+  @UseGuards(ConfirmationThrottleGuard)
+  @Post('email-confirmation/request')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async requestConfirmationEmail(
+    @User() user: JwtRtPayload,
+    @Res() res: Response,
+  ) {
+    await this.authService.requestEmailConfirmation(user.sub);
+    res.status(HttpStatus.NO_CONTENT).send();
+  }
+
+  @Put('confirm-email')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async confirmEmail(
+    @User() user: JwtRtPayload,
+    @Body() dto: ConfirmEmailDto,
+    @Res() res: Response,
+  ) {
+    await this.authService.confirmEmail(user.sub, dto);
+    res.status(HttpStatus.NO_CONTENT).send();
+  }
+
   // @Public()
   // @Get('reset-password')
   // @HttpCode(HttpStatus.NO_CONTENT)
   // async getResetPage(@Query() query: RecoveryDto, @Res() res: Response) {
   //   await this.authService.getResetPage(query.token, res);
   // }
-
   @Public()
   @Put('reset-password')
   @HttpCode(HttpStatus.NO_CONTENT)

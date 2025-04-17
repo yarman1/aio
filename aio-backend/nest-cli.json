@@ -4,7 +4,7 @@
   "sourceRoot": "src",
   "compilerOptions": {
     "assets": [
-      "**/*.docx", "**/*.html",
+      "**/*.docx", "**/*.html", "**/*.png",
       {
         "include": "generated/**/*",
         "outDir": "dist",

@@ -8,16 +8,27 @@ import { AtStrategy, RtStrategy } from './strategies';
 import { MailModule } from 'src/mail/mail.module';
 import { BullModule } from '@nestjs/bull';
 import { RecoveryProcessor } from './processors/recovery.processor';
+import { PaymentModule } from '../payment/payment.module';
+import { PrismaModule } from '../prisma/prisma.module';
+import * as process from 'node:process';
 
 @Module({
   imports: [
     UsersModule,
     JwtModule.register({}),
     MailModule,
-    BullModule.registerQueue({
-      name: 'recovery-queue',
-      redis: process.env.REDIS_URL,
-    }),
+    BullModule.registerQueue(
+      {
+        name: 'recovery-queue',
+        redis: process.env.REDIS_URL,
+      },
+      {
+        name: 'confirmation-queue',
+        redis: process.env.REDIS_URL,
+      },
+    ),
+    PaymentModule,
+    PrismaModule,
   ],
   controllers: [AuthController],
   providers: [

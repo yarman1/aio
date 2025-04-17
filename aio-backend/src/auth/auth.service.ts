@@ -2,7 +2,10 @@ import { InjectQueue } from '@nestjs/bull';
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
+  InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -23,6 +26,9 @@ import { JwtPayload, Role, Tokens } from './types';
 import { RedisService } from '../redis/redis.service';
 import * as crypto from 'crypto';
 import { promisify } from 'util';
+import Stripe from 'stripe';
+import { ConfirmEmailDto } from './dto/confirm-email.dto';
+import { PrismaService } from '../prisma/prisma.service';
 
 const scrypt = promisify(crypto.scrypt);
 
@@ -34,13 +40,18 @@ export class AuthService {
     secure: true,
   };
 
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private config: ConfigService,
     private usersService: UsersService,
     private jwtService: JwtService,
     private mailService: MailService,
+    private prismaService: PrismaService,
     @InjectQueue('recovery-queue') private recoveryQueue: Queue,
+    @InjectQueue('confirmation-queue') private confirmationQueue: Queue,
     private redisService: RedisService,
+    @Inject('StripeClient') private stripeClient: Stripe,
   ) {}
 
   async register(dto: RegisterDto): Promise<Tokens> {
@@ -48,11 +59,22 @@ export class AuthService {
     if (user) {
       throw new BadRequestException('User with this email already exists');
     }
+    let customer = null;
+    try {
+      customer = await this.stripeClient.customers.create({
+        name: dto.userName,
+        email: dto.email,
+      });
+    } catch (error) {
+      this.logger.error('Stripe customer cannot be created');
+      throw new InternalServerErrorException('Internal server error');
+    }
     const { password, ...userData } = dto;
     const hash = await this.hashData(password);
     const newUser = await this.usersService.create({
       ...userData,
       passwordHash: hash,
+      customerId: customer.id,
     });
     return this.getTokens(newUser.id, newUser.role as Role);
   }
@@ -159,6 +181,40 @@ export class AuthService {
     await this.redisService.deleteKey(token);
   }
 
+  async requestEmailConfirmation(userId: number) {
+    const user = await this.usersService.findUserById(userId);
+    if (user.isEmailConfirmed) {
+      throw new BadRequestException('Email is confirmed');
+    }
+    const job = await this.recoveryQueue.add({ userId });
+    await job.finished();
+    const token = this.generateShortToken();
+    const key = `${userId}-confirmation-token`;
+    await this.redisService.setKey(key, token, ms('15m'));
+    await this.mailService.sendConfirmationEmail(user.email, token);
+  }
+
+  async confirmEmail(userId: number, dto: ConfirmEmailDto) {
+    //const user = await this.usersService.findUserById(userId);
+    const token: string | null = await this.redisService.getValue(
+      `${userId}-confirmation-token`,
+    );
+    if (!token) {
+      throw new BadRequestException('Invalid confirmation code');
+    }
+    if (dto.code !== token) {
+      throw new BadRequestException('Invalid confirmation code');
+    }
+    await this.prismaService.user.update({
+      where: {
+        id: userId,
+      },
+      data: {
+        isEmailConfirmed: true,
+      },
+    });
+  }
+
   private async changePassword(userId: number, newPassword: string) {
     await this.redisService.deleteSubset(`rt:${userId}:*`);
     const hash = await this.hashData(newPassword);
@@ -204,6 +260,7 @@ export class AuthService {
   }
 
   async deleteUser(userId: number) {
+    // add deleting stripe customers
     await this.usersService.remove(userId);
     await this.redisService.deleteSubset(`rt:${userId}:*`);
   }
@@ -212,5 +269,16 @@ export class AuthService {
     const [storedHash, salt] = passwordHash.split(';salt=');
     const hash = (await scrypt(password, salt, 64)) as Buffer;
     return storedHash == hash.toString('hex');
+  }
+
+  private generateShortToken(length = 6) {
+    const chars: string = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+
+    const bytes = crypto.randomBytes(length);
+    let token = '';
+    for (let i = 0; i < length; i++) {
+      token += chars[bytes[i] % chars.length];
+    }
+    return token;
   }
 }

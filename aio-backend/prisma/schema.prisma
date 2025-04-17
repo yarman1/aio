@@ -10,17 +10,28 @@ datasource db {
 }
 
 model User {
-  id           Int      @id() @default(autoincrement())
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  email        String   @unique
-  userName     String   @unique
-  passwordHash String
-  customerId   String   @unique
-  role         Role     @default(user)
+  id               Int      @id() @default(autoincrement())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  email            String   @unique
+  userName         String
+  passwordHash     String
+  isEmailConfirmed Boolean  @default(false)
+  customerId       String   @unique
+  role             Role     @default(user)
+  Creator          Creator?
 }
 
 enum Role {
   user
   admin
+}
+
+model Creator {
+  id               Int    @id() @default(autoincrement())
+  userId           Int    @unique
+  user             User   @relation(fields: [userId], references: [id])
+  connectAccountId String @unique
+  creatorUsername  String @unique
+  description      String @default("")
 }

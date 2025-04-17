@@ -12,6 +12,8 @@ import Redis from 'ioredis';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import { APP_GUARD } from '@nestjs/core';
 import { AtGuard, RolesGuard } from './auth/guards';
+import { PaymentModule } from './payment/payment.module';
+import { CreatorsModule } from './creators/creators.module';
 
 @Module({
   imports: [
@@ -31,6 +33,8 @@ import { AtGuard, RolesGuard } from './auth/guards';
         storage: new ThrottlerStorageRedisService(redisClient),
       }),
     }),
+    PaymentModule,
+    CreatorsModule,
   ],
   controllers: [AppController],
   providers: [

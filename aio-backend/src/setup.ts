@@ -32,6 +32,9 @@ export function setup(app: INestApplication) {
       'Origin',
       'X-Requested-With',
       'x-api-key',
+      'x-client-type',
+      'x-refresh-token',
+      'x-device-id',
     ],
     credentials: true,
   });

@@ -3,4 +3,5 @@ export class CreateUserDto {
   userName: string;
   passwordHash: string;
   customerId: string;
+  isEmailConfirmed?: boolean;
 }

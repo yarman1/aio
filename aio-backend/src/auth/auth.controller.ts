@@ -1,11 +1,15 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
+  Get,
   HttpCode,
   HttpStatus,
   Post,
   Put,
+  Query,
+  Req,
   Res,
   UseGuards,
   UseInterceptors,
@@ -30,11 +34,18 @@ import { JwtRtPayload } from './types';
 import { ConfirmationFlagInterceptor } from './interceptors/confirmation-flag.interceptor';
 import { ConfirmationThrottleGuard } from './guards/confirmation-throttle.guard';
 import { ConfirmEmailDto } from './dto/confirm-email.dto';
+import { TokenResponseMobileDto } from './dto/mobile/token-response.mobile.dto';
+import { plainToInstance } from 'class-transformer';
+import { GoogleAuthUrlDto } from './dto/google-auth-url.dto';
+import { ConfigService } from '@nestjs/config';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private config: ConfigService,
+  ) {}
 
   @Public()
   @Post('local/sign-in')
@@ -43,7 +54,16 @@ export class AuthController {
   async login(@Body() dto: LoginDto, @Res() res: Response) {
     const tokens = await this.authService.login(dto);
     this.authService.setAuthCookies(res, tokens);
-    res.json({ accessToken: tokens.accessToken });
+    return plainToInstance(AtResponseDto, { accessToken: tokens.accessToken });
+  }
+
+  @Public()
+  @Post('local/mobile/sign-in')
+  @HttpCode(HttpStatus.OK)
+  @ApiResponse({ type: AtResponseDto })
+  async loginMobile(@Body() dto: LoginDto) {
+    const tokens: TokenResponseMobileDto = await this.authService.login(dto);
+    return plainToInstance(TokenResponseMobileDto, tokens);
   }
 
   @Public()
@@ -53,7 +73,59 @@ export class AuthController {
   async register(@Body() dto: RegisterDto, @Res() res: Response) {
     const tokens = await this.authService.register(dto);
     this.authService.setAuthCookies(res, tokens);
-    res.json({ accessToken: tokens.accessToken });
+    return plainToInstance(AtResponseDto, { accessToken: tokens.accessToken });
+  }
+
+  @Public()
+  @Get('/google/auth/url')
+  async getGoogleAuthUrl(@Req() req: Request): Promise<GoogleAuthUrlDto> {
+    // revise errors
+    if (!req?.headers?.['x-client-type']) {
+      throw new BadRequestException('Client type is not defined');
+    }
+    if (
+      req.headers['x-client-type'] !== 'web' ||
+      req.headers['x-client-type'] !== 'mobile'
+    ) {
+      throw new BadRequestException('Client type is not defined');
+    }
+    const clientType = req.headers['x-client-type'];
+    const url = this.authService.generateGoogleAuthUrl(clientType);
+    const res = {
+      authUrl: url,
+    };
+    return plainToInstance(GoogleAuthUrlDto, res);
+  }
+
+  @Public()
+  @Get('/google/callback')
+  async googleCallback(
+    @Query('code') code: string,
+    @Query('state') clientType: string,
+    @Res() res: Response,
+  ) {
+    const tokens = await this.authService.googleOauthCallback(code);
+
+    if (clientType === 'web') {
+      this.authService.setAuthCookies(res, tokens);
+      res.redirect(this.config.get<string>('GOOGLE_OAUTH_REDIRECT_WEB'));
+    } else {
+      const redirectBase = this.config.get<string>(
+        'GOOGLE_OAUTH_REDIRECT_MOBILE',
+      );
+      res.redirect(
+        `${redirectBase}?access=${tokens.accessToken}&refresh=${tokens.refreshToken}&device=${tokens.deviceId}`,
+      );
+    }
+  }
+
+  @Public()
+  @Post('local/mobile/sign-up')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiResponse({ type: AtResponseDto })
+  async registerMobile(@Body() dto: RegisterDto) {
+    const tokens = await this.authService.register(dto);
+    return plainToInstance(TokenResponseMobileDto, tokens);
   }
 
   @Public()
@@ -71,14 +143,20 @@ export class AuthController {
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @ApiResponse({ type: AtResponseDto })
-  async refreshToken(@User() user: JwtRtPayload, @Res() res: Response) {
+  async refreshToken(
+    @User() user: JwtRtPayload,
+    @Res() res: Response,
+    @Req() req: Request,
+  ) {
     const tokens = await this.authService.refreshToken(
       user.sub,
       user.refreshToken,
       user.deviceId,
       res,
     );
-    this.authService.setAuthCookies(res, tokens);
+    if (req?.headers?.['x-client-type'] === 'web') {
+      this.authService.setAuthCookies(res, tokens);
+    }
     res.json({ accessToken: tokens.accessToken });
   }
 
@@ -100,8 +178,15 @@ export class AuthController {
     @Body() dto: UpdatePasswordDto,
     @User('sub') userId: number,
     @Res() res: Response,
+    @Req() req: Request,
   ) {
-    await this.authService.updatePassword(dto, userId, res);
+    const isWebRequest = req.headers?.['x-client-type'] === 'web';
+    if (isWebRequest) {
+      await this.authService.updatePassword(dto, userId, res);
+    } else {
+      await this.authService.updatePassword(dto, userId);
+    }
+
     res.status(HttpStatus.NO_CONTENT).send();
   }
 
@@ -149,12 +234,6 @@ export class AuthController {
     res.status(HttpStatus.NO_CONTENT).send();
   }
 
-  // @Public()
-  // @Get('reset-password')
-  // @HttpCode(HttpStatus.NO_CONTENT)
-  // async getResetPage(@Query() query: RecoveryDto, @Res() res: Response) {
-  //   await this.authService.getResetPage(query.token, res);
-  // }
   @Public()
   @Put('reset-password')
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -162,6 +241,7 @@ export class AuthController {
     await this.authService.resetPassword(dto);
   }
 
+  // update delete user (stripe things and maybe deactivation)
   @UseGuards(RtGuard)
   @Delete('user')
   @HttpCode(HttpStatus.NO_CONTENT)

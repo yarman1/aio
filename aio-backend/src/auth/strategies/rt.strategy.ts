@@ -18,7 +18,13 @@ export class RtStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
   ) {
     super({
       jwtFromRequest: (req: Request) => {
-        return req?.cookies?.['refreshToken'] || null;
+        if (req.headers['x-client-type'] === 'web') {
+          return req?.cookies?.['refreshToken'] || null;
+        } else if (req.headers['x-client-type'] === 'mobile') {
+          return req.headers['x-refresh-token'];
+        } else {
+          return null;
+        }
       },
       secretOrKey: config.get<string>('RT_SECRET'),
       passReqToCallback: true,
@@ -26,7 +32,7 @@ export class RtStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
   }
 
   async validate(req: Request, payload: JwtPayload) {
-    const refreshToken = req.cookies?.['refreshToken'];
+    const refreshToken = req.cookies['refreshToken'];
     if (!refreshToken) {
       throw new ForbiddenException('Refresh token is not valid');
     }
@@ -34,7 +40,16 @@ export class RtStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
     if (!isExists) {
       throw new NotFoundException('User with this id no longer exists');
     }
-    const deviceId = req.cookies?.['deviceId'];
+
+    let deviceId: string = '';
+    if (req.headers['x-client-type'] === 'web') {
+      deviceId = req.cookies?.['deviceId'];
+    } else if (req.headers['x-client-type'] === 'mobile') {
+      deviceId = req.headers['x-device-id'] as string;
+    } else {
+      throw new ForbiddenException('Device id is not valid');
+    }
+
     if (!deviceId) {
       throw new ForbiddenException('Device id is not valid');
     }

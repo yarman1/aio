@@ -132,8 +132,14 @@ export class AuthController {
   @UseGuards(RtGuard)
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async logout(@User() user: JwtRtPayload, @Res() res: Response) {
-    this.authService.clearAuthCookies(res);
+  async logout(
+    @User() user: JwtRtPayload,
+    @Res() res: Response,
+    @Req() req: Request,
+  ) {
+    if (req?.headers?.['x-client-type'] === 'web') {
+      this.authService.clearAuthCookies(res);
+    }
     await this.authService.logout(user.sub, user.deviceId);
     res.send();
   }

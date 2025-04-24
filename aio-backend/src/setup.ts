@@ -35,6 +35,7 @@ export function setup(app: INestApplication) {
       'x-client-type',
       'x-refresh-token',
       'x-device-id',
+      'ngrok-skip-browser-warning', //only dev
     ],
     credentials: true,
   });

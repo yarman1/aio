@@ -48,4 +48,9 @@ export class UsersService {
   async updateUserInfo(id: number, dto: UpdateUserDto) {
     return this.prismaService.user.update({ where: { id }, data: { ...dto } });
   }
+
+  async isEmailConfirmed(id: number) {
+    const user = await this.prismaService.user.findUnique({ where: { id } });
+    return user.isEmailConfirmed;
+  }
 }

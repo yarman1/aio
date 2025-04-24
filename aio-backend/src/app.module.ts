@@ -14,6 +14,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { AtGuard, RolesGuard } from './auth/guards';
 import { PaymentModule } from './payment/payment.module';
 import { CreatorsModule } from './creators/creators.module';
+import { ClientTypeGuard } from './guards/client-type.guard';
 
 @Module({
   imports: [
@@ -42,6 +43,10 @@ import { CreatorsModule } from './creators/creators.module';
     {
       provide: APP_GUARD,
       useClass: AtGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: ClientTypeGuard,
     },
     {
       provide: APP_GUARD,

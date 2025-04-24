@@ -32,10 +32,13 @@ export class RtStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
   }
 
   async validate(req: Request, payload: JwtPayload) {
-    const refreshToken = req.cookies['refreshToken'];
-    if (!refreshToken) {
-      throw new ForbiddenException('Refresh token is not valid');
+    let refreshToken: string;
+    if (req.headers['x-client-type'] === 'web') {
+      refreshToken = req?.cookies?.['refreshToken'];
+    } else if (req.headers['x-client-type'] === 'mobile') {
+      refreshToken = req.headers['x-refresh-token'] as string;
     }
+
     const isExists = await this.usersService.exists(payload.sub);
     if (!isExists) {
       throw new NotFoundException('User with this id no longer exists');

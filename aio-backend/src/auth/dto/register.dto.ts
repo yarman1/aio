@@ -6,8 +6,7 @@ import {
 } from 'class-validator';
 
 export class RegisterDto {
-  @IsNotEmpty()
-  @IsEmail()
+  @IsEmail({}, { message: 'Email must be in the correct format' })
   email: string;
 
   @IsNotEmpty()

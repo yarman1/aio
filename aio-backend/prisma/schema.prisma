@@ -28,10 +28,20 @@ enum Role {
 }
 
 model Creator {
-  id               Int    @id() @default(autoincrement())
-  userId           Int    @unique
-  user             User   @relation(fields: [userId], references: [id])
-  connectAccountId String @unique
-  creatorUsername  String @unique
-  description      String @default("")
+  id                      Int              @id() @default(autoincrement())
+  userId                  Int              @unique
+  user                    User             @relation(fields: [userId], references: [id])
+  connectAccountId        String           @unique
+  creatorUsername         String           @unique
+  description             String           @default("")
+  isStripeAccountVerified Boolean          @default(false)
+  products                StripeProducts[]
+}
+
+model StripeProducts {
+  id        Int     @id()
+  productId String  @unique
+  priceId   String  @unique
+  Creator   Creator @relation(fields: [creatorId], references: [id])
+  creatorId Int
 }

@@ -1,0 +1,15 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true
+  },
+  "include": [
+    "App.tsx",
+    "global.d.ts",
+    "src/**/*",
+    "nativewind-env.d.ts"
+  ]
+}

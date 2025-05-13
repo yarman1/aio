@@ -9,10 +9,18 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import type { AuthStackNavigationProp } from '../../navigation';
+import type { AuthStackNavigationProp } from '../../navigation/AuthNavigator';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { setCredentials, updateErrorMessage } from '../../slices/authSlice';
 import { useSignInMutation } from '../../services/baseAPI';
+
+// START MOCK DATA
+const tokensData = {
+  accessToken: 'wonderful_access_token',
+  refreshToken: 'cool_refresh_token',
+  deviceId: 'amazing_device_id',
+};
+// END MOCK DATA
 
 const LoginScreen: React.FC = () => {
   const authNav = useNavigation<AuthStackNavigationProp>();
@@ -44,8 +52,8 @@ const LoginScreen: React.FC = () => {
 
   const handleLogin = async () => {
     try {
-      const tokens = await signIn({ email, password }).unwrap();
-      dispatch(setCredentials(tokens));
+      //const tokens = await signIn({ email, password }).unwrap();
+      dispatch(setCredentials(tokensData));
     } catch {
       // we let the error block render the formattedError
     }

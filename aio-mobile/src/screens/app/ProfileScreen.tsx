@@ -11,7 +11,7 @@ const ProfileScreen: React.FC = () => {
   const [logOut, { isLoading }] = useLogOutMutation();
 
   const handleLogout = async () => {
-    await logOut().unwrap();
+    //await logOut().unwrap();
     dispatch(logout());
   };
 

@@ -13,6 +13,14 @@ import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { setCredentials, updateErrorMessage } from '../../slices/authSlice';
 import { useSignUpMutation } from '../../services/baseAPI';
 
+// START MOCK DATA
+const tokensData = {
+  accessToken: 'wonderful_access_token',
+  refreshToken: 'cool_refresh_token',
+  deviceId: 'amazing_device_id',
+};
+// END MOCK DATA
+
 const RegisterScreen: React.FC = () => {
   const dispatch = useAppDispatch();
 
@@ -42,10 +50,10 @@ const RegisterScreen: React.FC = () => {
   }, [errorMessage]);
 
   const handleRegister = async () => {
-    try {
-      const tokens = await signUp({ email, userName, password }).unwrap();
-      dispatch(setCredentials(tokens));
-    } catch {}
+    // try {
+    //   const tokens = await signUp({ email, userName, password }).unwrap();
+    dispatch(setCredentials(tokensData));
+    // } catch {}
   };
 
   return (

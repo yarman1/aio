@@ -31,6 +31,8 @@ import { ConfirmEmailDto } from './dto/confirm-email.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { Credentials, OAuth2Client } from 'google-auth-library';
 import { google } from 'googleapis';
+import axios from 'axios';
+import { StorageService } from '../storage/storage.service';
 
 const scrypt = promisify(crypto.scrypt);
 
@@ -50,6 +52,7 @@ export class AuthService {
     private jwtService: JwtService,
     private mailService: MailService,
     private prismaService: PrismaService,
+    private storage: StorageService,
     @InjectQueue('recovery-queue') private recoveryQueue: Queue,
     @InjectQueue('confirmation-queue') private confirmationQueue: Queue,
     private redisService: RedisService,
@@ -202,7 +205,7 @@ export class AuthService {
     const client = await this.getUserClient(googleTokens);
     const oauth2 = google.oauth2({ auth: client, version: 'v2' });
     const { data } = await oauth2.userinfo.get();
-    const { email, name } = data;
+    const { email, name, picture } = data;
 
     const user = await this.usersService.findUserByEmail(email);
     let userId: number;
@@ -222,6 +225,7 @@ export class AuthService {
         this.logger.error('Stripe customer cannot be created');
         throw new InternalServerErrorException('Internal server error');
       }
+
       const newUser = await this.usersService.create({
         email,
         userName: name,
@@ -229,6 +233,32 @@ export class AuthService {
         passwordHash: 'GOOGLE_USER',
         customerId: customer.id,
       });
+
+      if (picture) {
+        try {
+          const resp = await axios.get(picture, {
+            responseType: 'arraybuffer',
+          });
+          const buffer = Buffer.from(resp.data, 'binary');
+          const contentType = resp.headers['content-type'] || 'image/jpeg';
+
+          const fileExt = picture.split('.').pop()!.split('?')[0] || 'jpg';
+          const fakeFile = {
+            originalname: `google-avatar.${fileExt}`,
+            mimetype: contentType,
+            size: buffer.length,
+            buffer,
+          } as Express.Multer.File;
+
+          newUser.avatarUrl = await this.usersService.setAvatar(
+            newUser.id,
+            fakeFile,
+          );
+        } catch (err) {
+          this.logger.error('Could not import Google avatar', err);
+        }
+      }
+
       userId = newUser.id;
     }
 

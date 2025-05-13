@@ -18,38 +18,331 @@ export class PaymentWebhookService {
 
   async handleEvent(event: Stripe.Event) {
     switch (event.type) {
-      case 'account.updated':
-        await this.handleAccountUpdatedInfo(
-          event.data.object as Stripe.Account,
+      // 1. When Checkout completes, create your DB record
+      case 'checkout.session.completed':
+        await this.handleCheckoutSessionCompleted(
+          event.data.object as Stripe.Checkout.Session,
         );
         break;
+
+      // 2. When a subscription invoice succeeds, update its currentPeriodEnd
+      case 'invoice.payment_succeeded':
+        await this.handleInvoicePaymentSucceeded(
+          event.data.object as Stripe.Invoice,
+        );
+        break;
+
+      // 3. If the subscription is manually updated (e.g. upgrade / cancel at period end)
+      case 'customer.subscription.updated':
+        await this.handleSubscriptionUpdated(
+          event.data.object as Stripe.Subscription,
+        );
+        break;
+
+      // 4. When Stripe actually deletes (ends) the subscription
+      case 'customer.subscription.deleted':
+        await this.handleSubscriptionEnded(
+          event.data.object as Stripe.Subscription,
+        );
+        break;
+
+      // 5. Payment failure → mark cancel_at_period_end + isCancelled
+      case 'invoice.payment_failed':
+        await this.handleInvoicePaymentFailed(
+          event.data.object as Stripe.Invoice,
+        );
+        break;
+
       default:
         this.logger.warn(`Unhandled event type: ${event.type}`);
     }
   }
 
-  private async handleAccountUpdatedInfo(account: Stripe.Account) {
+  async handleEventConnect(event: Stripe.Event) {
+    switch (event.type) {
+      case 'account.updated':
+        await this.handleAccountUpdatedInfo(
+          event.data.object as Stripe.Account,
+        );
+        break;
+
+      default:
+        this.logger.warn(`Unhandled event type: ${event.type}`);
+    }
+  }
+
+  private async handleCheckoutSessionCompleted(
+    session: Stripe.Checkout.Session,
+  ) {
+    if (session.mode !== 'subscription' || !session.subscription) {
+      return;
+    }
+
     try {
-      if (account.charges_enabled && account.payouts_enabled) {
-        const creator = await this.prismaService.creator.findUnique({
-          where: {
-            connectAccountId: account.id,
+      const subscriptionId =
+        typeof session.subscription === 'string'
+          ? session.subscription
+          : session.subscription.id;
+
+      const { userId, creatorId, planId } = session.metadata ?? {};
+      if (!userId || !creatorId || !planId) {
+        this.logger.error(
+          'Missing metadata on checkout.session.completed',
+          session.metadata,
+        );
+        return;
+      }
+
+      const stripeSub =
+        await this.stripe.subscriptions.retrieve(subscriptionId);
+
+      await this.prismaService.$transaction(async (tx) => {
+        const newSubscription = await tx.subscription.create({
+          data: {
+            subscriptionStripeId: subscriptionId,
+            createdAt: new Date(stripeSub.created * 1000),
+            updatedAt: new Date(),
+            currentPeriodEnd: new Date(
+              stripeSub.items[0].current_period_end * 1000,
+            ),
+            isCancelled: false,
+            isEnded: false,
+            planId: parseInt(planId, 10),
+            userId: parseInt(userId, 10),
+            creatorId: parseInt(creatorId, 10),
           },
         });
-        if (creator && !creator.isStripeAccountVerified) {
-          await this.prismaService.creator.update({
-            where: {
-              connectAccountId: account.id,
+
+        await tx.follow.createMany({
+          data: [
+            {
+              userId: parseInt(userId, 10),
+              creatorId: parseInt(creatorId, 10),
             },
-            data: {
-              isStripeAccountVerified: true,
-            },
-          });
-        }
-      }
-    } catch (error) {
-      this.logger.error('Stripe account update is failed', error);
-      throw new InternalServerErrorException('Internal server error');
+          ],
+          skipDuplicates: true,
+        });
+
+        await tx.subscriptionEvent.create({
+          data: {
+            subscriptionId: newSubscription.id,
+            type: 'CREATED',
+          },
+        });
+      });
+
+      this.logger.log(
+        `Subscription ${subscriptionId} recorded for user ${userId}`,
+      );
+    } catch (err) {
+      this.logger.error('Error in handleCheckoutSessionCompleted', err);
+      throw new InternalServerErrorException();
     }
+  }
+
+  private async handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
+    const subId = await this.getSubscriptionIdFromInvoice(invoice);
+    if (!subId) {
+      this.logger.warn(
+        `Skipping invoice.payment_succeeded: no subscription on invoice ${invoice.id}`,
+      );
+      return;
+    }
+
+    try {
+      const periodEnd =
+        invoice.period_end || invoice.lines.data[0]?.period?.end;
+      if (!periodEnd) {
+        this.logger.warn(`Cannot find period_end on invoice ${invoice.id}`);
+        return;
+      }
+
+      const subscription = await this.prismaService.subscription.update({
+        where: { subscriptionStripeId: subId },
+        data: {
+          currentPeriodEnd: new Date(periodEnd * 1000),
+          updatedAt: new Date(),
+        },
+      });
+
+      await this.prismaService.subscriptionEvent.create({
+        data: {
+          subscriptionId: subscription.id,
+          type: 'RENEWED',
+        },
+      });
+
+      this.logger.log(
+        `Subscription ${subId} extended to ${new Date(
+          periodEnd * 1000,
+        ).toISOString()}`,
+      );
+    } catch (err) {
+      this.logger.error('Error in handleInvoicePaymentSucceeded', err);
+      throw new InternalServerErrorException();
+    }
+  }
+
+  private async handleSubscriptionUpdated(subscription: Stripe.Subscription) {
+    try {
+      // Look up your Plan by its Stripe priceId
+      const priceId = subscription.items.data[0]?.price.id;
+      const plan = priceId
+        ? await this.prismaService.plan.findUnique({
+            where: { priceId },
+          })
+        : null;
+
+      const updateData: any = {
+        isCancelled: subscription.cancel_at_period_end ?? false,
+        currentPeriodEnd: new Date(
+          subscription.items[0].current_period_end * 1000,
+        ),
+        updatedAt: new Date(),
+      };
+      if (plan) updateData.planId = plan.id;
+
+      // If Stripe status is “canceled” (immediate end), mark ended
+      if (subscription.status === 'canceled') {
+        updateData.isEnded = true;
+      }
+
+      const updatedSubscription = await this.prismaService.subscription.update({
+        where: {
+          subscriptionStripeId: subscription.id,
+        },
+        data: updateData,
+      });
+
+      if (subscription.cancel_at_period_end) {
+        await this.prismaService.subscriptionEvent.create({
+          data: {
+            subscriptionId: updatedSubscription.id,
+            type: 'CANCELED',
+          },
+        });
+      }
+
+      this.logger.log(`Subscription ${subscription.id} updated in DB`);
+    } catch (err) {
+      this.logger.error('Error in handleSubscriptionUpdated', err);
+      throw new InternalServerErrorException();
+    }
+  }
+
+  private async handleSubscriptionEnded(subscription: Stripe.Subscription) {
+    try {
+      const updatedSubscription = await this.prismaService.subscription.update({
+        where: {
+          subscriptionStripeId: subscription.id,
+        },
+        data: {
+          isEnded: true,
+          updatedAt: new Date(),
+        },
+      });
+
+      await this.prismaService.subscriptionEvent.create({
+        data: {
+          subscriptionId: updatedSubscription.id,
+          type: 'EXPIRED', // or CANCELED if you prefer
+        },
+      });
+      this.logger.log(`Subscription ${subscription.id} marked as ended`);
+    } catch (err) {
+      this.logger.error('Error in handleSubscriptionEnded', err);
+      throw new InternalServerErrorException();
+    }
+  }
+
+  private async handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
+    const subId = await this.getSubscriptionIdFromInvoice(invoice);
+    if (!subId) {
+      this.logger.warn(
+        `Skipping invoice.payment_failed: no subscription on invoice ${invoice.id}`,
+      );
+      return;
+    }
+
+    try {
+      // 1) Cancel the subscription immediately in Stripe
+      await this.stripe.subscriptions.cancel(subId);
+
+      // 2) Mark as cancelled AND ended in your DB
+      const updatedSubscription = await this.prismaService.subscription.update({
+        where: { subscriptionStripeId: subId },
+        data: {
+          isCancelled: true,
+          isEnded: true,
+          cancelationReason: 'payment_failed',
+          updatedAt: new Date(),
+        },
+      });
+
+      await this.prismaService.subscriptionEvent.create({
+        data: {
+          subscriptionId: updatedSubscription.id,
+          type: 'CANCELED',
+        },
+      });
+
+      this.logger.warn(
+        `Subscription ${subId} cancelled and ended due to failed invoice ${invoice.id}`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Error cancelling+ending subscription ${subId} on payment_failed`,
+        err,
+      );
+      throw new InternalServerErrorException();
+    }
+  }
+
+  private async handleAccountUpdatedInfo(account: Stripe.Account) {
+    try {
+      const creator = await this.prismaService.creator.findUnique({
+        where: { connectAccountId: account.id },
+      });
+      if (!creator) return;
+
+      const isVerified = account.charges_enabled && account.payouts_enabled;
+
+      await this.prismaService.creator.update({
+        where: { id: creator.id },
+        data: { isStripeAccountVerified: isVerified },
+      });
+    } catch (error) {
+      this.logger.error('Stripe account update failed', error);
+      throw new InternalServerErrorException();
+    }
+  }
+
+  /** Basil-style lookup for the subscription ID on an Invoice */
+  private async getSubscriptionIdFromInvoice(
+    invoice: Stripe.Invoice,
+  ): Promise<string | undefined> {
+    // 1) Basil: invoice.parent.subscription_details.subscription
+    if (
+      invoice.parent?.type === 'subscription_details' &&
+      invoice.parent.subscription_details?.subscription
+    ) {
+      return invoice.parent.subscription_details.subscription as string;
+    }
+
+    // 2) fallback: line item’s parent.subscription_item_details.subscription_item
+    const line = invoice.lines.data.find(
+      (li) => li.parent?.type === 'subscription_item_details',
+    );
+    if (line?.parent?.type === 'subscription_item_details') {
+      const subItemId = line.parent.subscription_item_details.subscription_item;
+      if (subItemId) {
+        const subItem = await this.stripe.subscriptionItems.retrieve(subItemId);
+        return typeof subItem.subscription === 'string'
+          ? subItem.subscription
+          : undefined;
+      }
+    }
+
+    return undefined;
   }
 }

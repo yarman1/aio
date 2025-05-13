@@ -10,16 +10,28 @@ datasource db {
 }
 
 model User {
-  id               Int      @id() @default(autoincrement())
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  email            String   @unique
+  id               Int            @id() @default(autoincrement())
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  email            String         @unique
   userName         String
   passwordHash     String
-  isEmailConfirmed Boolean  @default(false)
-  customerId       String   @unique
-  role             Role     @default(user)
-  Creator          Creator?
+  isEmailConfirmed Boolean        @default(false)
+  customerId       String         @unique
+  role             Role           @default(user)
+  creator          Creator?
+  subscriptions    Subscription[]
+  postViews        PostView[]
+  postLikes        PostLike[]
+  postReposts      PostRepost[]
+  pollVotes        PollVote[]
+  comments         Comment[]
+
+  avatarKey    String?
+  avatarUrl    String?
+  follows      Follow[]
+  mediaPlays   MediaPlay[]
+  followEvents FollowEvent[]
 }
 
 enum Role {
@@ -28,20 +40,360 @@ enum Role {
 }
 
 model Creator {
-  id                      Int              @id() @default(autoincrement())
-  userId                  Int              @unique
-  user                    User             @relation(fields: [userId], references: [id])
-  connectAccountId        String           @unique
-  creatorUsername         String           @unique
-  description             String           @default("")
-  isStripeAccountVerified Boolean          @default(false)
-  products                StripeProducts[]
+  id                      Int               @id() @default(autoincrement())
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @default(now())
+  userId                  Int               @unique
+  user                    User              @relation(fields: [userId], references: [id])
+  connectAccountId        String            @unique
+  creatorUsername         String            @unique
+  description             String            @default("")
+  isStripeAccountVerified Boolean           @default(false)
+  plans                   Plan[]
+  creatorCategories       CreatorCategory[]
+  externalBenefits        ExternalBenefit[]
+  subscriptions           Subscription[]
+
+  avatarKey             String?
+  avatarUrl             String?
+  follows               Follow[]
+  followEvents          FollowEvent[]
+  creatorApiCredentials CreatorApiCredential[]
 }
 
-model StripeProducts {
-  id        Int     @id()
-  productId String  @unique
-  priceId   String  @unique
-  Creator   Creator @relation(fields: [creatorId], references: [id])
+enum Interval {
+  day
+  week
+  month
+  year
+}
+
+model Plan {
+  id                Int               @id() @default(autoincrement())
+  productId         String            @unique
+  name              String
+  createdAt         DateTime
+  updatedAt         DateTime          @default(now())
+  description       String
+  priceId           String            @unique
+  price             Decimal
+  interval          Interval
+  intervalCount     Int
+  isArchived        Boolean           @default(false)
+  creator           Creator           @relation(fields: [creatorId], references: [id])
+  creatorId         Int
+  creatorCategories CreatorCategory[]
+  externalBenefits  ExternalBenefit[]
+  subscriptions     Subscription[]
+  planStats         PlanStats[]
+}
+
+model CreatorCategory {
+  id                   Int                    @id() @default(autoincrement())
+  creatorId            Int
+  name                 String
+  isPublic             Boolean                @default(false)
+  creator              Creator                @relation(fields: [creatorId], references: [id])
+  plans                Plan[]
+  posts                Post[]
+  creatorCategoryStats CreatorCategoryStats[]
+}
+
+model ExternalBenefit {
+  id        Int     @id() @default(autoincrement())
   creatorId Int
+  name      String
+  creator   Creator @relation(fields: [creatorId], references: [id])
+  plans     Plan[]
+}
+
+model Subscription {
+  id                   Int                 @id() @default(autoincrement())
+  subscriptionStripeId String              @unique
+  createdAt            DateTime
+  updatedAt            DateTime            @default(now())
+  currentPeriodEnd     DateTime
+  isCancelled          Boolean
+  isEnded              Boolean
+  cancellationComment  String?
+  cancellationFeedback String?
+  cancelationReason    String?
+  planId               Int
+  userId               Int
+  creatorId            Int
+  plan                 Plan                @relation(fields: [planId], references: [id])
+  user                 User                @relation(fields: [userId], references: [id])
+  creator              Creator             @relation(fields: [creatorId], references: [id])
+  subscriptionEvents   SubscriptionEvent[]
+}
+
+model PostView {
+  id       Int      @id() @default(autoincrement())
+  postId   Int
+  post     Post     @relation(fields: [postId], references: [id])
+  userId   Int
+  user     User     @relation(fields: [userId], references: [id])
+  viewDate DateTime
+
+  @@unique([postId, userId, viewDate], name: "unique_user_view_per_day")
+}
+
+enum PostType {
+  TEXT
+  VIDEO
+  AUDIO
+  POLL
+}
+
+enum PostStatus {
+  DRAFT // created but not active
+  ACTIVE
+}
+
+model Post {
+  id                   Int             @id @default(autoincrement())
+  type                 PostType
+  name                 String
+  description          String?
+  headerKey            String? // S3 key
+  category             CreatorCategory @relation(fields: [categoryId], references: [id])
+  categoryId           Int
+  status               PostStatus      @default(DRAFT)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  commentsEnabled      Boolean         @default(true)
+  isReadyForActivation Boolean         @default(false)
+  comments             Comment[]
+
+  // counts (you can derive views from PostView)
+  likesCount   Int @default(0)
+  repostsCount Int @default(0)
+
+  // relations
+  images     PostImage[] // only for TEXT posts; max 5
+  media      PostMedia? // VIDEO/AUDIO posts
+  poll       Poll? // POLL posts
+  views      PostView[]
+  likes      PostLike[]
+  reposts    PostRepost[]
+  mediaPlays MediaPlay[]
+}
+
+model PostImage {
+  id     Int    @id @default(autoincrement())
+  post   Post   @relation(fields: [postId], references: [id])
+  postId Int
+  key    String // S3 key
+  order  Int // 0..4 to enforce <=5 in application
+}
+
+enum MediaType {
+  VIDEO
+  AUDIO
+}
+
+model PostMedia {
+  id         Int     @id @default(autoincrement())
+  post       Post    @relation(fields: [postId], references: [id])
+  postId     Int     @unique
+  mediaKey   String? // S3 key for main media
+  previewKey String? // S3 key for preview image (video only)
+  uploaded   Boolean @default(false) // only set true when both media & (if video) preview exist
+}
+
+model Poll {
+  id        Int          @id @default(autoincrement())
+  post      Post         @relation(fields: [postId], references: [id])
+  postId    Int          @unique
+  isClosed  Boolean      @default(false)
+  options   PollOption[]
+  pollVotes PollVote[]
+}
+
+model PollOption {
+  id        Int        @id @default(autoincrement())
+  poll      Poll       @relation(fields: [pollId], references: [id])
+  pollId    Int
+  text      String
+  voteCount Int        @default(0)
+  pollVotes PollVote[]
+}
+
+model Comment {
+  id        Int      @id @default(autoincrement())
+  content   String
+  postId    Int
+  userId    Int
+  parentId  Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  post          Post           @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user          User           @relation(fields: [userId], references: [id])
+  parent        Comment?       @relation("CommentToComment", fields: [parentId], references: [id], onDelete: Cascade)
+  replies       Comment[]      @relation("CommentToComment")
+  commentEvents CommentEvent[]
+
+  @@index([postId])
+  @@index([userId])
+  @@index([parentId])
+}
+
+model PostLike {
+  id        Int      @id @default(autoincrement())
+  post      Post     @relation(fields: [postId], references: [id])
+  postId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId], name: "unique_like_per_user")
+}
+
+model PostRepost {
+  id        Int      @id @default(autoincrement())
+  post      Post     @relation(fields: [postId], references: [id])
+  postId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+  createdAt DateTime @default(now())
+}
+
+model PollVote {
+  id        Int        @id @default(autoincrement())
+  poll      Poll       @relation(fields: [pollId], references: [id])
+  pollId    Int
+  option    PollOption @relation(fields: [optionId], references: [id])
+  optionId  Int
+  user      User       @relation(fields: [userId], references: [id])
+  userId    Int
+  createdAt DateTime   @default(now())
+
+  @@unique([pollId, userId], name: "unique_vote_per_poll")
+}
+
+model Follow {
+  id        Int      @id @default(autoincrement())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+  creator   Creator  @relation(fields: [creatorId], references: [id])
+  creatorId Int
+  createdAt DateTime @default(now())
+
+  @@unique([userId, creatorId])
+}
+
+model CommentEvent {
+  id        Int              @id @default(autoincrement())
+  commentId Int
+  type      CommentEventType
+  createdAt DateTime         @default(now())
+
+  comment Comment @relation(fields: [commentId], references: [id])
+}
+
+enum CommentEventType {
+  CREATED
+  UPDATED
+  DELETED
+}
+
+model MediaPlay {
+  id       Int      @id @default(autoincrement())
+  postId   Int
+  userId   Int
+  playedAt DateTime @default(now())
+  duration Int?
+
+  post Post @relation(fields: [postId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([postId])
+  @@index([userId])
+}
+
+enum FollowEventType {
+  FOLLOWED
+  UNFOLLOWED
+}
+
+model FollowEvent {
+  id        Int             @id @default(autoincrement())
+  userId    Int
+  creatorId Int
+  type      FollowEventType
+  createdAt DateTime        @default(now())
+
+  user    User    @relation(fields: [userId], references: [id])
+  creator Creator @relation(fields: [creatorId], references: [id])
+
+  @@index([userId])
+  @@index([creatorId])
+}
+
+enum SubscriptionEventType {
+  CREATED
+  RENEWED
+  CANCELED
+  EXPIRED
+}
+
+model SubscriptionEvent {
+  id             Int                   @id @default(autoincrement())
+  subscriptionId Int
+  type           SubscriptionEventType
+  occurredAt     DateTime              @default(now())
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+
+  @@index([subscriptionId])
+  @@index([type])
+}
+
+model CreatorCategoryStats {
+  id                Int      @id @default(autoincrement())
+  creatorCategoryId Int
+  date              DateTime // truncated to midnight UTC
+  views             Int      @default(0)
+  likes             Int      @default(0)
+  reposts           Int      @default(0)
+  comments          Int      @default(0)
+  votes             Int      @default(0)
+  plays             Int      @default(0)
+
+  // snapshot of the name at time of aggregation
+  categoryName String
+
+  creatorCategory CreatorCategory @relation(fields: [creatorCategoryId], references: [id])
+
+  @@unique([creatorCategoryId, date])
+}
+
+model PlanStats {
+  id           Int      @id @default(autoincrement())
+  planId       Int
+  date         DateTime // truncated to midnight UTC
+  subsCreated  Int      @default(0)
+  subsRenewed  Int      @default(0)
+  subsCanceled Int      @default(0)
+  subsExpired  Int      @default(0)
+
+  plan Plan @relation(fields: [planId], references: [id])
+
+  @@unique([planId, date])
+  @@index([planId])
+}
+
+model CreatorApiCredential {
+  id           Int       @id @default(autoincrement())
+  creatorId    Int
+  clientId     String    @unique @default(cuid())
+  clientSecret String
+  createdAt    DateTime  @default(now())
+  revokedAt    DateTime?
+  isActive     Boolean   @default(true)
+
+  creator Creator @relation(fields: [creatorId], references: [id])
+
+  @@index([creatorId])
 }

@@ -15,6 +15,12 @@ import { AtGuard, RolesGuard } from './auth/guards';
 import { PaymentModule } from './payment/payment.module';
 import { CreatorsModule } from './creators/creators.module';
 import { ClientTypeGuard } from './guards/client-type.guard';
+import { PlansModule } from './plans/plans.module';
+import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { PostsModule } from './posts/posts.module';
+import { StorageModule } from './storage/storage.module';
+import { StatsModule } from './stats/stats.module';
+import { RecommendationsModule } from './recommendations/recommendations.module';
 
 @Module({
   imports: [
@@ -36,6 +42,12 @@ import { ClientTypeGuard } from './guards/client-type.guard';
     }),
     PaymentModule,
     CreatorsModule,
+    PlansModule,
+    SubscriptionsModule,
+    PostsModule,
+    StorageModule,
+    StatsModule,
+    RecommendationsModule,
   ],
   controllers: [AppController],
   providers: [

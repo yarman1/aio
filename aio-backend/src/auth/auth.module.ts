@@ -11,10 +11,12 @@ import { RecoveryProcessor } from './processors/recovery.processor';
 import { PaymentModule } from '../payment/payment.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import * as process from 'node:process';
+import { StorageModule } from '../storage/storage.module';
 
 @Module({
   imports: [
     UsersModule,
+    StorageModule,
     JwtModule.register({}),
     MailModule,
     BullModule.registerQueue(

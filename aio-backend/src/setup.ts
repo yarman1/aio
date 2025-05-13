@@ -7,9 +7,13 @@ import { Reflector } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 import { ConfigService } from '@nestjs/config';
+import { json } from 'body-parser';
+import { urlencoded } from 'body-parser';
 
 export function setup(app: INestApplication) {
   const configService = app.get(ConfigService);
+  app.use(json({ limit: '3gb' }));
+  app.use(urlencoded({ extended: true }));
   app.useGlobalInterceptors(
     new ClassSerializerInterceptor(app.get(Reflector), {
       strategy: 'excludeAll',

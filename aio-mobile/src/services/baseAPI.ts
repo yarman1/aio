@@ -63,11 +63,6 @@ interface IUserInfo {
   avatarUrl?: string;
 }
 
-interface ISignInResponse {
-  tokens: ITokenRes;
-  user: IUserInfo;
-}
-
 interface IConfirmEmailReq {
   code: string;
 }
@@ -147,7 +142,7 @@ export interface Post {
   likesCount: number;
   repostsCount: number;
   isLiked: boolean;
-  hasAccess?: boolean; // only for video/audio
+  hasAccess?: boolean;
   headerKey: string | null;
   headerUrl?: string;
   images: Image[];
@@ -175,8 +170,8 @@ export interface Plan {
   description: string;
   price: string;
   isArchived: boolean;
-  interval: string; // e.g. "month" | "year" | ...
-  intervalCount: number; // e.g. 1, 3, 12, …
+  interval: string;
+  intervalCount: number;
   creatorCategories: CreatorCategory[];
   externalBenefits: ExternalBenefit[];
 }
@@ -285,12 +280,6 @@ export const baseAPI = createApi({
         body,
       }),
     }),
-
-    /**
-     * PUT /auth/reset-password
-     * Body: { token, newPassword }
-     * Returns 204 on success, or 400/404 with JSON { statusCode, message, error }
-     */
     resetPassword: build.mutation<void, { token: string; newPassword: string }>(
       {
         query: (body) => ({
@@ -316,8 +305,6 @@ export const baseAPI = createApi({
             ]
           : [{ type: 'Credentials' as const, id: 'LIST' }],
     }),
-
-    // ➜  POST /credentials   (create a new credential pair)
     createCredential: build.mutation<
       { clientId: string; clientSecret: string },
       void
@@ -328,8 +315,6 @@ export const baseAPI = createApi({
       }),
       invalidatesTags: [{ type: 'Credentials', id: 'LIST' }],
     }),
-
-    // ➜  DELETE /credentials/:clientId   (revoke a credential)
     revokeCredential: build.mutation<void, { clientId: string }>({
       query: ({ clientId }) => ({
         url: `/credentials/${clientId}`,
@@ -339,11 +324,6 @@ export const baseAPI = createApi({
         { type: 'Credentials', id: clientId },
       ],
     }),
-
-    //
-    // ─── ◆  RECOMMENDATIONS  ◆ ────────────────────────────────────────────
-    //
-    // GET  /recommendations/creator-category/:id?date=YYYY-MM-DD
     getCategoryRecommendations: build.query<
       { recommendation: string },
       { categoryId: number; date?: string }
@@ -352,10 +332,7 @@ export const baseAPI = createApi({
         url: `/recommendations/creator-category/${categoryId}`,
         params: date ? { date } : {},
       }),
-      // no invalidation needed—this is read‐only
     }),
-
-    // GET  /recommendations/creator-plan/:planId?date=YYYY-MM-DD
     getPlanRecommendations: build.query<
       { recommendation: string },
       { planId: number; date?: string }
@@ -365,10 +342,6 @@ export const baseAPI = createApi({
         params: date ? { date } : {},
       }),
     }),
-    //
-    // ─── ◆  POSTS  ◆ ───────────────────────────────────────────────────────
-    //
-    // POST   /posts
     createPost: build.mutation<
       Post,
       { type: PostType; name: string; categoryId: number }
@@ -380,8 +353,6 @@ export const baseAPI = createApi({
       }),
       invalidatesTags: [{ type: 'ManagementPosts', id: 'PARTIAL-LIST' }],
     }),
-
-    // PUT   /posts/:id
     updatePost: build.mutation<
       Post,
       {
@@ -399,8 +370,6 @@ export const baseAPI = createApi({
       invalidatesTags: (result) =>
         result ? [{ type: 'ManagementPosts' as const, id: result.id }] : [],
     }),
-
-    // PUT   /posts/:id/activate
     activatePost: build.mutation<Post, number>({
       query: (postId) => ({
         url: `/posts/${postId}/activate`,
@@ -409,8 +378,6 @@ export const baseAPI = createApi({
       invalidatesTags: (result) =>
         result ? [{ type: 'ManagementPosts' as const, id: result.id }] : [],
     }),
-
-    // PUT   /posts/:id/deactivate
     deactivatePost: build.mutation<Post, number>({
       query: (postId) => ({
         url: `/posts/${postId}/deactivate`,
@@ -419,15 +386,11 @@ export const baseAPI = createApi({
       invalidatesTags: (result) =>
         result ? [{ type: 'ManagementPosts' as const, id: result.id }] : [],
     }),
-
-    // GET   /posts/creator/:id
     getPostByCreator: build.query<Post, number>({
       query: (postId) => `/posts/creator/${postId}`,
       providesTags: (result) =>
         result ? [{ type: 'ManagementPosts' as const, id: result.id }] : [],
     }),
-
-    // GET   /posts/creator/search-posts?page=&limit=&…
     searchByCreatorPosts: build.query<
       { posts: Post[]; total: number },
       {
@@ -459,8 +422,6 @@ export const baseAPI = createApi({
             ]
           : [{ type: 'ManagementPosts' as const, id: 'PARTIAL-LIST' }],
     }),
-
-    // POST /posts/:id/header
     uploadPostHeader: build.mutation<Post, { postId: number; file: FormData }>({
       query: ({ postId, file }) => ({
         url: `/posts/${postId}/header`,
@@ -470,8 +431,6 @@ export const baseAPI = createApi({
       invalidatesTags: (result) =>
         result ? [{ type: 'ManagementPosts' as const, id: result.id }] : [],
     }),
-
-    // POST /posts/:id/images
     uploadPostImage: build.mutation<Post, { postId: number; file: FormData }>({
       query: ({ postId, file }) => ({
         url: `/posts/${postId}/images`,
@@ -481,8 +440,6 @@ export const baseAPI = createApi({
       invalidatesTags: (result) =>
         result ? [{ type: 'ManagementPosts' as const, id: result.id }] : [],
     }),
-
-    // DELETE /posts/:postId/images/:imageId
     deletePostImage: build.mutation<Post, { postId: number; imageId: number }>({
       query: ({ postId, imageId }) => ({
         url: `/posts/${postId}/images/${imageId}`,
@@ -491,8 +448,6 @@ export const baseAPI = createApi({
       invalidatesTags: (result) =>
         result ? [{ type: 'ManagementPosts' as const, id: result.id }] : [],
     }),
-
-    // POST /posts/:id/media/initiate
     initiateMediaUpload: build.mutation<
       { key: string; url: string },
       { postId: number; contentType: string }
@@ -503,8 +458,6 @@ export const baseAPI = createApi({
         body: { contentType },
       }),
     }),
-
-    // POST /posts/:id/media/confirm
     confirmMediaUpload: build.mutation<
       Post,
       { postId: number; contentType: string }
@@ -517,8 +470,6 @@ export const baseAPI = createApi({
       invalidatesTags: (result) =>
         result ? [{ type: 'ManagementPosts' as const, id: result.id }] : [],
     }),
-
-    // POST /posts/:id/media/preview
     uploadMediaPreview: build.mutation<
       Post,
       { postId: number; file: FormData }
@@ -531,8 +482,6 @@ export const baseAPI = createApi({
       invalidatesTags: (result) =>
         result ? [{ type: 'ManagementPosts' as const, id: result.id }] : [],
     }),
-
-    // POST /posts/:id/poll/options
     setPollOptions: build.mutation<
       Post,
       { postId: number; options: { text: string }[] }
@@ -545,8 +494,6 @@ export const baseAPI = createApi({
       invalidatesTags: (result) =>
         result ? [{ type: 'ManagementPosts' as const, id: result.id }] : [],
     }),
-
-    // PUT /posts/:id/poll/close
     closePoll: build.mutation<Post, number>({
       query: (postId) => ({
         url: `/posts/${postId}/poll/close`,
@@ -560,11 +507,6 @@ export const baseAPI = createApi({
       query: () => `/creators/is-exist`,
       providesTags: ['Creator'],
     }),
-
-    //
-    // ───  ◆  CREATOR‐CATEGORIES  ◆ ──────────────────────────────────────────
-    //
-    // GET   /plan/creator-category
     getCreatorCategories: build.query<CreatorCategory[], void>({
       query: () => '/plan/creator-category',
       providesTags: (cats) =>
@@ -578,7 +520,6 @@ export const baseAPI = createApi({
             ]
           : [{ type: 'MyCreatorCategories' as const, id: 'LIST' }],
     }),
-    // POST  /plan/creator-category
     createCreatorCategory: build.mutation<
       CreatorCategory,
       { name: string; isPublic: boolean }
@@ -590,11 +531,6 @@ export const baseAPI = createApi({
       }),
       invalidatesTags: [{ type: 'MyCreatorCategories', id: 'LIST' }],
     }),
-
-    //
-    // ───  ◆  EXTERNAL‐BENEFITS  ◆ ────────────────────────────────────────────
-    //
-    // GET   /plan/external-benefit
     getExternalBenefits: build.query<ExternalBenefit[], void>({
       query: () => '/plan/external-benefit',
       providesTags: (benefits) =>
@@ -608,7 +544,6 @@ export const baseAPI = createApi({
             ]
           : [{ type: 'MyPlans' as const, id: 'BENEFITS' }],
     }),
-    // POST  /plan/external-benefit
     createExternalBenefit: build.mutation<ExternalBenefit, { name: string }>({
       query: (body) => ({
         url: '/plan/external-benefit',
@@ -617,11 +552,6 @@ export const baseAPI = createApi({
       }),
       invalidatesTags: [{ type: 'MyPlans', id: 'BENEFITS' }],
     }),
-
-    //
-    // ───  ◆  PLANS  ◆ ───────────────────────────────────────────────────────
-    //
-    // GET   /plan
     getPlans: build.query<Plan[], void>({
       query: () => '/plan',
       providesTags: (plans) =>
@@ -635,7 +565,6 @@ export const baseAPI = createApi({
             ]
           : [{ type: 'MyPlans' as const, id: 'LIST' }],
     }),
-    // POST  /plan
     createPlan: build.mutation<
       Plan,
       {
@@ -655,7 +584,6 @@ export const baseAPI = createApi({
       }),
       invalidatesTags: [{ type: 'MyPlans', id: 'LIST' }],
     }),
-    // PATCH /plan
     updatePlan: build.mutation<
       Plan,
       {
@@ -679,14 +607,11 @@ export const baseAPI = createApi({
             ]
           : [],
     }),
-    // GET   /plan/:planId
     getMyPlan: build.query<Plan, number>({
       query: (planId) => `/plan/${planId}`,
       providesTags: (plan) =>
         plan ? [{ type: 'MyPlans' as const, id: plan.id }] : [],
     }),
-
-    // ─── fetch *your* creator account (if any) ───────────────────────
     getMyCreator: build.query<
       {
         id: number;
@@ -700,8 +625,6 @@ export const baseAPI = createApi({
       query: () => `/creators`,
       providesTags: ['Creator'],
     }),
-
-    // ─── kick off Stripe onboarding to *create* your creator ─────────
     createCreator: build.mutation<{ url: string }, { creatorUsername: string }>(
       {
         query: ({ creatorUsername }) => ({
@@ -712,13 +635,9 @@ export const baseAPI = createApi({
         invalidatesTags: ['Creator'],
       },
     ),
-
-    // — check if I own the specified creator
     getCreatorIsOwner: build.query<{ isOwner: boolean }, number>({
       query: (id) => `/creators/${id}/is-owner`,
     }),
-
-    // — update Stripe account info (e.g. to re-verify)
     updateStripeAccount: build.mutation<{ url: string }, void>({
       query: () => ({
         url: '/creators/link/account/update',
@@ -726,13 +645,9 @@ export const baseAPI = createApi({
       }),
       invalidatesTags: ['Creator'],
     }),
-
-    // — launch Stripe “dashboard” to withdraw, see payouts, etc.
     getStripeDashboard: build.query<{ url: string }, void>({
       query: () => '/creators/stripe/dashboard',
     }),
-
-    // — change your creator’s public description
     updateCreatorDescription: build.mutation<Creator, { description: string }>({
       query: ({ description }) => ({
         url: '/creators/description',
@@ -741,8 +656,6 @@ export const baseAPI = createApi({
       }),
       invalidatesTags: ['Creator'],
     }),
-
-    // — change your creator’s username
     updateCreatorUsername: build.mutation<Creator, { creatorUsername: string }>(
       {
         query: ({ creatorUsername }) => ({
@@ -753,8 +666,6 @@ export const baseAPI = createApi({
         invalidatesTags: ['Creator'],
       },
     ),
-
-    // — upload/change your creator avatar
     updateCreatorAvatar: build.mutation<{ avatarUrl: string }, FormData>({
       query: (formData) => ({
         url: '/creators/avatar',
@@ -768,14 +679,9 @@ export const baseAPI = createApi({
       providesTags: (result) =>
         result ? [{ type: 'Post' as const, id: result.id }] : [],
     }),
-
-    // — refresh expired media URLs
     refreshMedia: build.query<Media, { postId: number }>({
       query: ({ postId }) => `/posts/${postId}/media/refresh`,
-      // no tags; we’ll manually re-run getPostAuthenticated on error
     }),
-
-    // — like a post
     likePost: build.mutation<void, { postId: number }>({
       query: ({ postId }) => ({
         url: `/posts/like/${postId}`,
@@ -786,20 +692,15 @@ export const baseAPI = createApi({
         { type: 'Post' as const, id: postId },
       ],
     }),
-
-    // — unlike a post (pass the likeId you got back originally, if available)
     unlikePost: build.mutation<void, { postId: number }>({
       query: ({ postId }) => ({
         url: `/posts/like/${postId}`,
         method: 'DELETE',
       }),
-      // if you know the postId, invalidate that; otherwise:
       invalidatesTags: (_res, _err, { postId }) => [
         { type: 'Post' as const, id: postId },
       ],
     }),
-
-    // — repost a post
     repostPost: build.mutation<void, { postId: number }>({
       query: ({ postId }) => ({
         url: `/posts/repost/${postId}`,
@@ -809,8 +710,6 @@ export const baseAPI = createApi({
         { type: 'Post' as const, id: postId },
       ],
     }),
-
-    // — vote in a poll
     votePoll: build.mutation<Post, { postId: number; optionId: number }>({
       query: ({ postId, optionId }) => ({
         url: `/posts/poll/vote`,
@@ -821,8 +720,6 @@ export const baseAPI = createApi({
         { type: 'Post' as const, id: postId },
       ],
     }),
-
-    // — create a comment (optionally with parentId)
     createComment: build.mutation<
       Comment,
       { postId: number; content: string; parentId?: number }
@@ -837,13 +734,11 @@ export const baseAPI = createApi({
       ],
     }),
 
-    // — record a media play for stats
     recordPlay: build.mutation<void, { postId: number }>({
       query: ({ postId }) => ({
         url: `/posts/${postId}/play`,
         method: 'POST',
       }),
-      // no need to invalidate
     }),
     upgradePreview: build.mutation<
       {
@@ -929,7 +824,6 @@ export const baseAPI = createApi({
           : [],
     }),
 
-    // 2️⃣ search posts for a creator
     searchCreatorPosts: build.query<
       {
         posts: {
@@ -1090,16 +984,13 @@ export const baseAPI = createApi({
         try {
           const { data } = await queryFulfilled;
           dispatch(setCredentials(data));
-          // Fetch user data after successful login
           const userResult = await dispatch(
             baseAPI.endpoints.getUserInfo.initiate(),
           );
           if ('data' in userResult) {
             dispatch(updateUser(userResult.data));
           }
-        } catch {
-          // Error handling is done by the baseQueryWithReauth
-        }
+        } catch {}
       },
     }),
     signUp: build.mutation<ITokenRes, ISignUpReq>({
@@ -1112,7 +1003,6 @@ export const baseAPI = createApi({
         try {
           const { data } = await queryFulfilled;
           dispatch(setCredentials(data));
-          // Fetch user data after successful login
           const userResult = await dispatch(
             baseAPI.endpoints.getUserInfo.initiate(),
           );
@@ -1138,7 +1028,6 @@ export const baseAPI = createApi({
       async onQueryStarted(_, { dispatch, queryFulfilled }) {
         try {
           const { data } = await queryFulfilled;
-          // Map IUserInfo to User type
           dispatch(
             updateUser({
               id: data.id,
@@ -1198,7 +1087,6 @@ export const baseAPI = createApi({
       async onQueryStarted(_, { dispatch, queryFulfilled }) {
         try {
           await queryFulfilled;
-          // Get updated user data after confirmation
           const userResult = await dispatch(
             baseAPI.endpoints.getUserInfo.initiate(),
           );

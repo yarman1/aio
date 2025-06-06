@@ -11,16 +11,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { AuthStackNavigationProp } from '../../navigation/AuthNavigator';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
-import { setCredentials, updateErrorMessage } from '../../slices/authSlice';
+import { updateErrorMessage } from '../../slices/authSlice';
 import { useSignInMutation } from '../../services/baseAPI';
-
-// START MOCK DATA
-const tokensData = {
-  accessToken: 'wonderful_access_token',
-  refreshToken: 'cool_refresh_token',
-  deviceId: 'amazing_device_id',
-};
-// END MOCK DATA
 
 const LoginScreen: React.FC = () => {
   const authNav = useNavigation<AuthStackNavigationProp>();
@@ -52,11 +44,8 @@ const LoginScreen: React.FC = () => {
 
   const handleLogin = async () => {
     try {
-      //const tokens = await signIn({ email, password }).unwrap();
-      dispatch(setCredentials(tokensData));
-    } catch {
-      // we let the error block render the formattedError
-    }
+      await signIn({ email, password }).unwrap();
+    } catch {}
   };
 
   return (
@@ -65,12 +54,10 @@ const LoginScreen: React.FC = () => {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         className="flex-1 justify-center px-6"
       >
-        {/* Title */}
         <Text className="text-4xl font-bold text-center text-primary mb-8 font-sans">
           aio
         </Text>
 
-        {/* Inputs */}
         <View className="space-y-4 mb-6">
           <TextInput
             className="w-full bg-white border border-gray-300 p-4 rounded-xl font-sans"
@@ -89,7 +76,6 @@ const LoginScreen: React.FC = () => {
           />
         </View>
 
-        {/* Login Button */}
         <Pressable
           onPress={handleLogin}
           disabled={isLoading}
@@ -102,14 +88,21 @@ const LoginScreen: React.FC = () => {
           </Text>
         </Pressable>
 
-        {/* Error Block */}
+        {/* Forgot Password Link */}
+        <View className="mt-4 items-center">
+          <Pressable onPress={() => authNav.navigate('ForgotPassword')}>
+            <Text className="text-primary font-medium font-sans">
+              Forgot Password?
+            </Text>
+          </Pressable>
+        </View>
+
         {formattedError ? (
           <View className="bg-red-100 border border-red-200 p-4 rounded-xl mt-4">
             <Text className="text-red-800 font-sans">{formattedError}</Text>
           </View>
         ) : null}
 
-        {/* Register Link */}
         <View className="mt-6 flex-row justify-center">
           <Text className="text-gray-600 font-sans">
             Don’t have an account?{' '}

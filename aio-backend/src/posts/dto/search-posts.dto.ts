@@ -3,15 +3,15 @@ import { Type } from 'class-transformer';
 import { PostType } from '../../generated/prisma/client';
 
 export class SearchPostsDto {
-  @IsInt()
   @Type(() => Number)
+  @IsInt()
   @Min(1)
-  page = 1;
+  page: number;
 
-  @IsInt()
   @Type(() => Number)
+  @IsInt()
   @Min(1)
-  limit = 10;
+  limit: number;
 
   @IsOptional()
   @IsInt()

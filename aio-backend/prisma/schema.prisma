@@ -9,6 +9,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum Role {
+  user
+  admin
+}
+
 model User {
   id               Int            @id() @default(autoincrement())
   createdAt        DateTime       @default(now())
@@ -18,7 +23,6 @@ model User {
   passwordHash     String
   isEmailConfirmed Boolean        @default(false)
   customerId       String         @unique
-  role             Role           @default(user)
   creator          Creator?
   subscriptions    Subscription[]
   postViews        PostView[]
@@ -27,16 +31,13 @@ model User {
   pollVotes        PollVote[]
   comments         Comment[]
 
+  role Role @default(user)
+
   avatarKey    String?
   avatarUrl    String?
   follows      Follow[]
   mediaPlays   MediaPlay[]
   followEvents FollowEvent[]
-}
-
-enum Role {
-  user
-  admin
 }
 
 model Creator {
@@ -46,7 +47,7 @@ model Creator {
   userId                  Int               @unique
   user                    User              @relation(fields: [userId], references: [id])
   connectAccountId        String            @unique
-  creatorUsername         String            @unique
+  creatorUsername         String
   description             String            @default("")
   isStripeAccountVerified Boolean           @default(false)
   plans                   Plan[]
@@ -146,7 +147,7 @@ enum PostType {
 }
 
 enum PostStatus {
-  DRAFT // created but not active
+  DRAFT
   ACTIVE
 }
 
@@ -155,7 +156,7 @@ model Post {
   type                 PostType
   name                 String
   description          String?
-  headerKey            String? // S3 key
+  headerKey            String?
   category             CreatorCategory @relation(fields: [categoryId], references: [id])
   categoryId           Int
   status               PostStatus      @default(DRAFT)
@@ -165,14 +166,12 @@ model Post {
   isReadyForActivation Boolean         @default(false)
   comments             Comment[]
 
-  // counts (you can derive views from PostView)
   likesCount   Int @default(0)
   repostsCount Int @default(0)
 
-  // relations
-  images     PostImage[] // only for TEXT posts; max 5
-  media      PostMedia? // VIDEO/AUDIO posts
-  poll       Poll? // POLL posts
+  images     PostImage[]
+  media      PostMedia?
+  poll       Poll?
   views      PostView[]
   likes      PostLike[]
   reposts    PostRepost[]
@@ -183,8 +182,10 @@ model PostImage {
   id     Int    @id @default(autoincrement())
   post   Post   @relation(fields: [postId], references: [id])
   postId Int
-  key    String // S3 key
-  order  Int // 0..4 to enforce <=5 in application
+  key    String
+  order  Int
+
+  @@unique([postId, order])
 }
 
 enum MediaType {
@@ -196,9 +197,9 @@ model PostMedia {
   id         Int     @id @default(autoincrement())
   post       Post    @relation(fields: [postId], references: [id])
   postId     Int     @unique
-  mediaKey   String? // S3 key for main media
-  previewKey String? // S3 key for preview image (video only)
-  uploaded   Boolean @default(false) // only set true when both media & (if video) preview exist
+  mediaKey   String?
+  previewKey String?
+  uploaded   Boolean @default(false)
 }
 
 model Poll {
@@ -274,9 +275,9 @@ model PollVote {
 
 model Follow {
   id        Int      @id @default(autoincrement())
-  user      User     @relation(fields: [userId], references: [id])
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    Int
-  creator   Creator  @relation(fields: [creatorId], references: [id])
+  creator   Creator  @relation(fields: [creatorId], references: [id], onDelete: Cascade)
   creatorId Int
   createdAt DateTime @default(now())
 
@@ -289,7 +290,7 @@ model CommentEvent {
   type      CommentEventType
   createdAt DateTime         @default(now())
 
-  comment Comment @relation(fields: [commentId], references: [id])
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
 }
 
 enum CommentEventType {
@@ -299,14 +300,14 @@ enum CommentEventType {
 }
 
 model MediaPlay {
-  id       Int      @id @default(autoincrement())
-  postId   Int
-  userId   Int
-  playedAt DateTime @default(now())
-  duration Int?
+  id        Int      @id @default(autoincrement())
+  postId    Int
+  userId    Int
+  createdAt DateTime @default(now())
+  duration  Int?
 
-  post Post @relation(fields: [postId], references: [id])
-  user User @relation(fields: [userId], references: [id])
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([postId])
   @@index([userId])
@@ -324,8 +325,8 @@ model FollowEvent {
   type      FollowEventType
   createdAt DateTime        @default(now())
 
-  user    User    @relation(fields: [userId], references: [id])
-  creator Creator @relation(fields: [creatorId], references: [id])
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  creator Creator @relation(fields: [creatorId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([creatorId])
@@ -342,9 +343,9 @@ model SubscriptionEvent {
   id             Int                   @id @default(autoincrement())
   subscriptionId Int
   type           SubscriptionEventType
-  occurredAt     DateTime              @default(now())
+  createdAt      DateTime              @default(now())
 
-  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 
   @@index([subscriptionId])
   @@index([type])
@@ -353,7 +354,7 @@ model SubscriptionEvent {
 model CreatorCategoryStats {
   id                Int      @id @default(autoincrement())
   creatorCategoryId Int
-  date              DateTime // truncated to midnight UTC
+  date              DateTime
   views             Int      @default(0)
   likes             Int      @default(0)
   reposts           Int      @default(0)
@@ -361,7 +362,6 @@ model CreatorCategoryStats {
   votes             Int      @default(0)
   plays             Int      @default(0)
 
-  // snapshot of the name at time of aggregation
   categoryName String
 
   creatorCategory CreatorCategory @relation(fields: [creatorCategoryId], references: [id])
@@ -372,7 +372,7 @@ model CreatorCategoryStats {
 model PlanStats {
   id           Int      @id @default(autoincrement())
   planId       Int
-  date         DateTime // truncated to midnight UTC
+  date         DateTime
   subsCreated  Int      @default(0)
   subsRenewed  Int      @default(0)
   subsCanceled Int      @default(0)

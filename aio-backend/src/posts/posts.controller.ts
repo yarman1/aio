@@ -14,24 +14,26 @@ import {
   NotFoundException,
   Query,
   Delete,
+  Res,
+  ValidationPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PostsService } from './posts.service';
 import {
   UpdatePostDto,
   SearchPostsDto,
-  LikePostDto,
-  RepostPostDto,
   VotePollDto,
   CreateCommentDto,
   UpdateCommentDto,
 } from './dto';
 import { User } from '../auth/decorators';
 import { GetCreatorIdPipe } from '../auth/pipes/get-creator-id.pipe';
-import { Public } from '../auth/decorators';
 import { CreatePostDto } from './dto/create-post.dto';
 import { SetPollOptionsDto } from './dto/set-poll-options.dto';
 import { PlayMediaDto } from './dto/play-media.dto';
+import { Response } from 'express';
+import { JwtRtPayload } from '../auth/types';
+import { SearchPostsUsersDto } from './dto/search-posts-users.dto';
 
 @Controller('posts')
 export class PostsController {
@@ -41,8 +43,9 @@ export class PostsController {
   async createPost(
     @User(GetCreatorIdPipe) creatorId: number,
     @Body() dto: CreatePostDto,
+    @Res() res: Response,
   ) {
-    return this.postsService.createPost(creatorId, dto);
+    res.send(await this.postsService.createPost(creatorId, dto));
   }
 
   @Put(':id')
@@ -50,38 +53,36 @@ export class PostsController {
     @User(GetCreatorIdPipe) creatorId: number,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdatePostDto,
+    @Res() res: Response,
   ) {
-    return this.postsService.updatePost(creatorId, id, dto);
+    res.send(await this.postsService.updatePost(creatorId, id, dto));
   }
 
   @Put(':id/activate')
   async activatePost(
     @User(GetCreatorIdPipe) creatorId: number,
     @Param('id', ParseIntPipe) id: number,
+    @Res() res: Response,
   ) {
-    return this.postsService.activatePost(creatorId, id);
+    res.send(await this.postsService.activatePost(creatorId, id));
   }
 
   @Put(':id/deactivate')
   async deactivatePost(
     @User(GetCreatorIdPipe) creatorId: number,
     @Param('id', ParseIntPipe) id: number,
+    @Res() res: Response,
   ) {
-    return this.postsService.deactivatePost(creatorId, id);
-  }
-
-  @Get(':id')
-  @Public()
-  async getPostPublic(@Param('id', ParseIntPipe) id: number) {
-    return this.postsService.getPostById(id);
+    res.send(await this.postsService.deactivatePost(creatorId, id));
   }
 
   @Get(':id/authenticated')
   async getPostAuthenticated(
     @Param('id', ParseIntPipe) id: number,
     @User() user: { sub: number },
+    @Res() res: Response,
   ) {
-    return this.postsService.getPostById(id, user.sub);
+    res.send(await this.postsService.getPostById(id, user.sub));
   }
 
   @Post(':id/header')
@@ -92,14 +93,17 @@ export class PostsController {
     @UploadedFile(
       new ParseFilePipe({
         validators: [
-          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }), // 5MB
+          new MaxFileSizeValidator({ maxSize: 25 * 1024 * 1024 }), // 5MB
           new FileTypeValidator({ fileType: /(jpg|jpeg|png)$/ }),
         ],
       }),
     )
     file: Express.Multer.File,
+    @Res() res: Response,
   ) {
-    return this.postsService.uploadPostHeaderImage(creatorId, id, file);
+    res.send(
+      await this.postsService.uploadPostHeaderImage(creatorId, id, file),
+    );
   }
 
   @Post(':id/images')
@@ -107,18 +111,33 @@ export class PostsController {
   async uploadPostImage(
     @User(GetCreatorIdPipe) creatorId: number,
     @Param('id', ParseIntPipe) id: number,
-    @Body('order') order: number,
+    @Body('order', ParseIntPipe) order: number,
     @UploadedFile(
       new ParseFilePipe({
         validators: [
-          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }), // 5MB
+          new MaxFileSizeValidator({ maxSize: 25 * 1024 * 1024 }), // 5MB
           new FileTypeValidator({ fileType: /(jpg|jpeg|png)$/ }),
         ],
       }),
     )
     file: Express.Multer.File,
+    @Res() res: Response,
   ) {
-    return this.postsService.uploadPostImage(creatorId, id, file, order);
+    res.send(
+      await this.postsService.uploadPostImage(creatorId, id, file, order),
+    );
+  }
+
+  @Delete(':postId/images/:imageId')
+  async deletePostImage(
+    @User(GetCreatorIdPipe) creatorId: number,
+    @Param('postId', ParseIntPipe) postId: number,
+    @Param('imageId', ParseIntPipe) imageId: number,
+    @Res() res: Response,
+  ) {
+    res.send(
+      await this.postsService.deletePostImage(creatorId, postId, imageId),
+    );
   }
 
   @Post(':id/media/initiate')
@@ -126,28 +145,22 @@ export class PostsController {
     @User(GetCreatorIdPipe) creatorId: number,
     @Param('id', ParseIntPipe) id: number,
     @Body('contentType') contentType: string,
-    @Body('fileSize') fileSize: number,
+    @Res() res: Response,
   ) {
-    return this.postsService.initiateMediaUpload(
-      creatorId,
-      id,
-      contentType,
-      fileSize,
+    res.send(
+      await this.postsService.initiateMediaUpload(creatorId, id, contentType),
     );
   }
 
-  @Post(':id/media/complete')
-  async completeMediaUpload(
+  @Post(':id/media/confirm')
+  async confirmMediaUpload(
     @User(GetCreatorIdPipe) creatorId: number,
     @Param('id', ParseIntPipe) id: number,
-    @Body('uploadId') uploadId: string,
-    @Body('parts') parts: Array<{ PartNumber: number; ETag: string }>,
+    @Body('contentType') contentType: string,
+    @Res() res: Response,
   ) {
-    return this.postsService.completeMediaUpload(
-      creatorId,
-      id,
-      uploadId,
-      parts,
+    res.send(
+      await this.postsService.confirmMediaUpload(creatorId, id, contentType),
     );
   }
 
@@ -159,49 +172,64 @@ export class PostsController {
     @UploadedFile(
       new ParseFilePipe({
         validators: [
-          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }), // 5MB
+          new MaxFileSizeValidator({ maxSize: 25 * 1024 * 1024 }), // 5MB
           new FileTypeValidator({ fileType: /(jpg|jpeg|png)$/ }),
         ],
       }),
     )
     file: Express.Multer.File,
+    @Res() res: Response,
   ) {
-    return this.postsService.uploadMediaPreview(creatorId, id, file);
+    res.send(await this.postsService.uploadMediaPreview(creatorId, id, file));
   }
 
   @Get(':id/media/refresh')
   async refreshMediaUrls(
     @Param('id', ParseIntPipe) id: number,
     @User() user: { sub: number },
+    @Res() res: Response,
   ) {
     const media = await this.postsService.refreshMediaUrls(id, user.sub);
     if (!media) {
       throw new NotFoundException('Media not found');
     }
-    return media;
+    res.send(media);
   }
 
-  @Post('like')
-  async likePost(@User() user: { sub: number }, @Body() dto: LikePostDto) {
-    return this.postsService.likePost(user.sub, dto);
+  @Post('like/:postId')
+  async likePost(
+    @User() user: { sub: number },
+    @Param('postId', ParseIntPipe) postId: number,
+    @Res() res: Response,
+  ) {
+    res.send(await this.postsService.likePost(user.sub, postId));
   }
 
   @Delete('like/:postId')
   async unlikePost(
     @User() user: { sub: number },
     @Param('postId', ParseIntPipe) postId: number,
+    @Res() res: Response,
   ) {
-    return this.postsService.unlikePost(user.sub, postId);
+    res.send(await this.postsService.unlikePost(user.sub, postId));
   }
 
-  @Post('repost')
-  async repostPost(@User() user: { sub: number }, @Body() dto: RepostPostDto) {
-    return this.postsService.repostPost(user.sub, dto);
+  @Post('repost/:postId')
+  async repostPost(
+    @User() user: { sub: number },
+    @Param('postId', ParseIntPipe) postId: number,
+    @Res() res: Response,
+  ) {
+    res.send(await this.postsService.repostPost(user.sub, postId));
   }
 
   @Post('poll/vote')
-  async votePoll(@User() user: { sub: number }, @Body() dto: VotePollDto) {
-    return this.postsService.votePoll(user.sub, dto);
+  async votePoll(
+    @User() user: { sub: number },
+    @Body() dto: VotePollDto,
+    @Res() res: Response,
+  ) {
+    res.send(await this.postsService.votePoll(user.sub, dto));
   }
 
   @Post('comments/:id')
@@ -209,11 +237,11 @@ export class PostsController {
     @User() user: { sub: number },
     @Param('id', ParseIntPipe) postId: number,
     @Body() createCommentDto: CreateCommentDto,
+    @Res() res: Response,
   ) {
-    return this.postsService.createComment(user.sub, {
-      ...createCommentDto,
-      postId,
-    });
+    res.send(
+      await this.postsService.createComment(user.sub, createCommentDto, postId),
+    );
   }
 
   @Put('comments/:id')
@@ -221,11 +249,14 @@ export class PostsController {
     @User() user: { sub: number },
     @Param('id', ParseIntPipe) commentId: number,
     @Body() updateCommentDto: UpdateCommentDto,
+    @Res() res: Response,
   ) {
-    return this.postsService.updateComment(
-      user.sub,
-      commentId,
-      updateCommentDto,
+    res.send(
+      await this.postsService.updateComment(
+        user.sub,
+        commentId,
+        updateCommentDto,
+      ),
     );
   }
 
@@ -233,46 +264,36 @@ export class PostsController {
   async deleteComment(
     @User() user: { sub: number },
     @Param('id', ParseIntPipe) commentId: number,
+    @Res() res: Response,
   ) {
-    return this.postsService.deleteComment(user.sub, commentId);
+    res.send(await this.postsService.deleteComment(user.sub, commentId));
   }
 
-  @Get('comments/:id')
-  async getPostComments(
-    @User() user: { sub: number },
-    @Param('id', ParseIntPipe) postId: number,
-  ) {
-    return this.postsService.getPostComments(user.sub, postId);
-  }
-
-  @Get('search')
-  @Public()
-  async searchPublic(@Query() dto: SearchPostsDto) {
-    return this.postsService.searchPosts(undefined, dto);
-  }
-
-  @Get('search/authenticated')
+  @Get('user/search-posts')
   async searchAuthenticated(
-    @User() user: { sub: number },
-    @Query() dto: SearchPostsDto,
+    @User() user: JwtRtPayload,
+    @Query() dto: SearchPostsUsersDto,
+    @Res() res: Response,
   ) {
-    return this.postsService.searchPosts(user.sub, dto);
+    res.send(await this.postsService.searchPosts(user.sub, dto));
   }
 
-  @Get('creator/search')
+  @Get('creator/search-posts')
   async searchCreatorPosts(
     @User(GetCreatorIdPipe) creatorId: number,
     @Query() dto: SearchPostsDto,
+    @Res() res: Response,
   ) {
-    return this.postsService.searchCreatorPosts(creatorId, dto);
+    res.send(await this.postsService.searchCreatorPosts(creatorId, dto));
   }
 
   @Get('creator/:id')
   async getPostByCreator(
     @User(GetCreatorIdPipe) creatorId: number,
     @Param('id', ParseIntPipe) id: number,
+    @Res() res: Response,
   ) {
-    return this.postsService.getPostByCreator(creatorId, id);
+    res.send(await this.postsService.getPostByCreator(creatorId, id));
   }
 
   @Post(':id/poll/options')
@@ -280,24 +301,29 @@ export class PostsController {
     @User(GetCreatorIdPipe) creatorId: number,
     @Param('id', ParseIntPipe) postId: number,
     @Body() dto: SetPollOptionsDto,
+    @Res() res: Response,
   ) {
-    return this.postsService.setPollOptions(creatorId, postId, dto);
+    res.send(await this.postsService.setPollOptions(creatorId, postId, dto));
   }
 
   @Put(':id/poll/close')
   async closePoll(
     @User(GetCreatorIdPipe) creatorId: number,
     @Param('id', ParseIntPipe) postId: number,
+    @Res() res: Response,
   ) {
-    return this.postsService.closePoll(creatorId, postId);
+    res.send(await this.postsService.closePoll(creatorId, postId));
   }
 
   @Post(':postId/play')
-  recordPlay(
+  async recordPlay(
     @Param('postId', ParseIntPipe) postId: number,
     @Body() dto: PlayMediaDto,
     @User() user: { sub: number },
+    @Res() res: Response,
   ) {
-    return this.postsService.recordMediaPlay(user.sub, postId, dto.duration);
+    res.send(
+      await this.postsService.recordMediaPlay(user.sub, postId, dto.duration),
+    );
   }
 }

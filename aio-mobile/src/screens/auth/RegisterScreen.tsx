@@ -13,14 +13,6 @@ import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { setCredentials, updateErrorMessage } from '../../slices/authSlice';
 import { useSignUpMutation } from '../../services/baseAPI';
 
-// START MOCK DATA
-const tokensData = {
-  accessToken: 'wonderful_access_token',
-  refreshToken: 'cool_refresh_token',
-  deviceId: 'amazing_device_id',
-};
-// END MOCK DATA
-
 const RegisterScreen: React.FC = () => {
   const dispatch = useAppDispatch();
 
@@ -50,10 +42,8 @@ const RegisterScreen: React.FC = () => {
   }, [errorMessage]);
 
   const handleRegister = async () => {
-    // try {
-    //   const tokens = await signUp({ email, userName, password }).unwrap();
-    dispatch(setCredentials(tokensData));
-    // } catch {}
+    const tokens = await signUp({ email, userName, password }).unwrap();
+    dispatch(setCredentials(tokens));
   };
 
   return (
@@ -62,12 +52,10 @@ const RegisterScreen: React.FC = () => {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         className="flex-1 justify-center px-6"
       >
-        {/* Title */}
         <Text className="text-4xl font-bold text-center text-primary mb-8 font-sans">
           Create Account
         </Text>
 
-        {/* Inputs */}
         <View className="space-y-4 mb-6">
           <TextInput
             className="w-full bg-white border border-gray-300 p-4 rounded-xl font-sans"
@@ -93,7 +81,6 @@ const RegisterScreen: React.FC = () => {
           />
         </View>
 
-        {/* Register Button */}
         <Pressable
           onPress={handleRegister}
           disabled={isLoading}
@@ -106,24 +93,11 @@ const RegisterScreen: React.FC = () => {
           </Text>
         </Pressable>
 
-        {/* Error */}
         {formattedError ? (
           <View className="bg-red-100 border border-red-200 p-4 rounded-xl mt-4">
             <Text className="text-red-800 font-sans">{formattedError}</Text>
           </View>
         ) : null}
-
-        {/* Back to Login */}
-        {/*<View className="mt-6 flex-row justify-center">*/}
-        {/*    <Text className="text-gray-600 font-sans">*/}
-        {/*        Already have an account?{" "}*/}
-        {/*    </Text>*/}
-        {/*    <Pressable onPress={() => authNav.navigate("Login")}>*/}
-        {/*        <Text className="text-primary font-medium font-sans">*/}
-        {/*            Log In*/}
-        {/*        </Text>*/}
-        {/*    </Pressable>*/}
-        {/*</View>*/}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

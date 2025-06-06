@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { RedisModule } from './redis/redis.module';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
@@ -21,6 +20,7 @@ import { PostsModule } from './posts/posts.module';
 import { StorageModule } from './storage/storage.module';
 import { StatsModule } from './stats/stats.module';
 import { RecommendationsModule } from './recommendations/recommendations.module';
+import { CredentialsModule } from './credentials/credentials.module';
 
 @Module({
   imports: [
@@ -48,10 +48,10 @@ import { RecommendationsModule } from './recommendations/recommendations.module'
     StorageModule,
     StatsModule,
     RecommendationsModule,
+    CredentialsModule,
   ],
   controllers: [AppController],
   providers: [
-    AppService,
     {
       provide: APP_GUARD,
       useClass: AtGuard,

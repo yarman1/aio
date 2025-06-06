@@ -2,6 +2,9 @@ import { Expose } from 'class-transformer';
 
 export class ReadUserDto {
   @Expose()
+  id: number;
+
+  @Expose()
   email: string;
 
   @Expose()
@@ -9,4 +12,10 @@ export class ReadUserDto {
 
   @Expose()
   createdAt: string;
+
+  @Expose()
+  isEmailConfirmed: string;
+
+  @Expose()
+  avatarUrl?: string;
 }

@@ -12,9 +12,6 @@ export class CreateCommentDto {
   @MaxLength(1000)
   content: string;
 
-  @IsInt()
-  postId: number;
-
   @IsOptional()
   @IsInt()
   parentId?: number;

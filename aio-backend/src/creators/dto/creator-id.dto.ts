@@ -1,6 +1,6 @@
 import { IsInt } from 'class-validator';
 
-export class LikePostDto {
+export class CreatorIdDto {
   @IsInt()
-  postId: number;
+  creatorId: number;
 }

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -15,6 +16,9 @@ import { v4 as uuid } from 'uuid';
 import { StorageService } from '../storage/storage.service';
 import { SearchCreatorsDto } from './dto/search-creators.dto';
 import { Prisma } from '../generated/prisma/client';
+import { UpdateCreatorDto } from './dto/update-creator.dto';
+import { CreatorUsernameDto } from './dto/creator-username.dto';
+import { CreatorDescriptionDto } from './dto/creator-description.dto';
 
 @Injectable()
 export class CreatorsService {
@@ -31,18 +35,19 @@ export class CreatorsService {
     userId: number,
     creatorUsername: string,
   ) {
-    if (
-      await this.prismaService.creator.findUnique({
-        where: {
-          creatorUsername,
-        },
-      })
-    ) {
-      throw new ForbiddenException('This creator username is already taken');
-    }
     const user = await this.usersService.findUserById(userId);
     if (!user.isEmailConfirmed) {
       throw new ForbiddenException('Email is not confirmed');
+    }
+
+    const creator = await this.prismaService.creator.findUnique({
+      where: {
+        userId,
+      },
+    });
+
+    if (creator) {
+      throw new ConflictException('This user already has creator');
     }
 
     const account = await this.stripeClient.accounts.create({
@@ -54,8 +59,6 @@ export class CreatorsService {
         },
       },
     });
-
-    // account creation error handling
 
     await this.prismaService.creator.create({
       data: {
@@ -90,7 +93,7 @@ export class CreatorsService {
     const url = await this.getAccountLinkUrl(
       clientType,
       creator.connectAccountId,
-      'account_update',
+      'account_onboarding',
     );
     return {
       url,
@@ -116,9 +119,63 @@ export class CreatorsService {
     return creator;
   }
 
-  async readCreatorPublic(creatorUsername: string) {
+  async updateCreatorUsername(userId: number, dto: CreatorUsernameDto) {
     const creator = await this.prismaService.creator.findUnique({
-      where: { creatorUsername },
+      where: { userId },
+    });
+    if (!creator) {
+      throw new NotFoundException(
+        'Creator account does not exist for this user',
+      );
+    }
+
+    return this.prismaService.creator.update({
+      where: {
+        userId,
+      },
+      data: {
+        creatorUsername: dto.creatorUsername,
+      },
+      select: {
+        id: true,
+        creatorUsername: true,
+        description: true,
+        avatarUrl: true,
+        isStripeAccountVerified: true,
+      },
+    });
+  }
+
+  async updateCreatorDescription(userId: number, dto: CreatorDescriptionDto) {
+    const creator = await this.prismaService.creator.findUnique({
+      where: { userId },
+    });
+    if (!creator) {
+      throw new NotFoundException(
+        'Creator account does not exist for this user',
+      );
+    }
+
+    return this.prismaService.creator.update({
+      where: {
+        userId,
+      },
+      data: {
+        description: dto.description,
+      },
+      select: {
+        id: true,
+        creatorUsername: true,
+        description: true,
+        avatarUrl: true,
+        isStripeAccountVerified: true,
+      },
+    });
+  }
+
+  async readCreatorPublic(creatorId: number, userId: number) {
+    const creator = await this.prismaService.creator.findUnique({
+      where: { id: creatorId },
       select: {
         id: true,
         creatorUsername: true,
@@ -130,7 +187,31 @@ export class CreatorsService {
     if (!creator) {
       throw new NotFoundException('This creator does not exist');
     }
-    return creator;
+
+    const follow = await this.prismaService.follow.findUnique({
+      where: {
+        userId_creatorId: {
+          userId,
+          creatorId: creator.id,
+        },
+      },
+    });
+
+    const subscription = (
+      await this.prismaService.subscription.findMany({
+        where: {
+          isEnded: false,
+          userId,
+          creatorId: creator.id,
+        },
+      })
+    )[0];
+
+    return {
+      ...creator,
+      isFollowed: !!follow,
+      isSubscribed: !!subscription,
+    };
   }
 
   async userOwnsCreator(userId: number, creatorId: number): Promise<boolean> {
@@ -138,6 +219,23 @@ export class CreatorsService {
       where: { id: creatorId, userId },
     });
     return count > 0;
+  }
+
+  async userHasCreator(userId: number) {
+    const user = await this.prismaService.user.findUnique({
+      where: {
+        id: userId,
+      },
+      include: {
+        creator: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User does not exist');
+    }
+
+    return !!user.creator;
   }
 
   async getCreatorStripeDashboardUrl(userId: number) {
@@ -241,12 +339,13 @@ export class CreatorsService {
     }
 
     try {
-      // 1) create the business-state “Follow” (skip if already exists)
-      const follow = await this.prismaService.follow.create({
-        data: { userId, creatorId },
+      await this.prismaService.follow.create({
+        data: {
+          userId,
+          creatorId,
+        },
       });
 
-      // 2) log raw analytics event
       await this.prismaService.followEvent.create({
         data: {
           userId,
@@ -255,7 +354,7 @@ export class CreatorsService {
         },
       });
 
-      return follow;
+      return this.readCreatorPublic(creatorId, userId);
     } catch (err: any) {
       if (err.code === 'P2002') {
         throw new BadRequestException('You are already following this creator');
@@ -281,7 +380,6 @@ export class CreatorsService {
       throw new NotFoundException('You are not following this creator');
     }
 
-    // 1) log raw “UNFOLLOWED” event, then 2) delete the business-state “Follow”
     await this.prismaService.$transaction([
       this.prismaService.followEvent.create({
         data: {
@@ -294,6 +392,8 @@ export class CreatorsService {
         where: { userId_creatorId: { userId, creatorId } },
       }),
     ]);
+
+    return this.readCreatorPublic(creatorId, userId);
   }
 
   async getFollowedCreators(userId: number) {

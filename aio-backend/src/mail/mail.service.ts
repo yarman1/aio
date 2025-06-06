@@ -32,6 +32,18 @@ export class MailService {
     });
   }
 
+  async sendPasswordRecoveryEmailMobile(email: string, token: string) {
+    const htmlTemplate = this.readHtmlFile('reset-password-mobile.html');
+    const htmlContent = htmlTemplate.replace('{{token}}', token);
+
+    await this.transporter.sendMail({
+      from: '"AIO administration" <aionotification1@gmail.com>',
+      to: email,
+      subject: 'Your Aio Password Reset Code',
+      html: htmlContent,
+    });
+  }
+
   async sendConfirmationEmail(email: string, code: string) {
     const htmlContent = this.readHtmlFile('confirmation-code.html').replace(
       '{{code}}',

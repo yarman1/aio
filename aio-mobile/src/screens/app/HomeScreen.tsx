@@ -1,105 +1,131 @@
-import React, { useState } from 'react';
-import { View, Text, Pressable, Modal, StatusBar } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAppDispatch } from '../../store/hooks';
-import { logout } from '../../slices/authSlice';
-import { useLogOutMutation } from '../../services/baseAPI';
+import React from 'react';
+import {
+  View,
+  Text,
+  FlatList,
+  Image,
+  Pressable,
+  ActivityIndicator,
+  StatusBar,
+  StyleSheet,
+  Platform,
+} from 'react-native';
+import { useGetFollowedCreatorsQuery } from '../../services/baseAPI';
+import { useNavigation } from '@react-navigation/native';
+import type { AppStackNavigationProp } from '../../navigation/AppNavigator';
+import { AvatarMenu } from '../../components/AvatarMenu';
 
-const HomeScreen: React.FC = () => {
-  const dispatch = useAppDispatch();
-  const [logOut, { isLoading }] = useLogOutMutation();
-  const [menuVisible, setMenuVisible] = useState(false);
+const STATUS_BAR_HEIGHT =
+  Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 44;
+const AVATAR_TOP_OFFSET = STATUS_BAR_HEIGHT + 10;
 
-  const handleLogout = () => {
-    setMenuVisible(false);
-    dispatch(logout());
-  };
+export default function HomeScreen() {
+  const navigation = useNavigation<AppStackNavigationProp>();
+  const { data, isLoading, isError, refetch } = useGetFollowedCreatorsQuery();
+
+  const renderItem = ({ item }: any) => (
+    <Pressable
+      style={styles.card}
+      onPress={() => navigation.navigate('Creator', { creatorId: item.id })}
+    >
+      {item.avatarUrl ? (
+        <Image source={{ uri: item.avatarUrl }} style={styles.avatar} />
+      ) : (
+        <View style={[styles.avatar, styles.avatarPlaceholder]}>
+          <Text style={styles.initial}>
+            {item.creatorUsername[0].toUpperCase()}
+          </Text>
+        </View>
+      )}
+      <View style={styles.info}>
+        <Text style={styles.username}>{item.creatorUsername}</Text>
+        <Text style={styles.description}>{item.description}</Text>
+      </View>
+      {item.isStripeAccountVerified && <Text style={styles.verified}>✓</Text>}
+    </Pressable>
+  );
 
   return (
-    <SafeAreaView className="flex-1 bg-background">
-      {/* top-right avatar */}
-      <SafeAreaView
-        edges={['top']}
-        className="absolute inset-x-0 top-0 items-end pr-4 z-30"
-      >
-        <Pressable
-          onPress={() => setMenuVisible(true)}
-          className="h-14 w-14 rounded-full bg-gray-200 items-center justify-center mt-5"
-        >
-          <Text className="text-lg font-bold text-gray-700">U</Text>
-        </Pressable>
-      </SafeAreaView>
+    <>
+      <StatusBar
+        translucent
+        backgroundColor="transparent"
+        barStyle="dark-content"
+      />
+      <View style={{ height: STATUS_BAR_HEIGHT, backgroundColor: '#fff' }} />
 
-      {/* main content */}
-      <View className="flex-1 items-center justify-center">
-        <Text className="text-2xl font-bold">Welcome to Aio!</Text>
-      </View>
-
-      {/* modal */}
-      <Modal
-        visible={menuVisible}
-        transparent
-        animationType="fade"
-        presentationStyle="overFullScreen"
-        statusBarTranslucent
-        onRequestClose={() => setMenuVisible(false)}
-      >
-        {/* darken status bar + app */}
-        <StatusBar
-          translucent
-          backgroundColor="rgba(0,0,0,0.6)"
-          barStyle="light-content"
-        />
-
-        {/* full screen wrapper */}
-        <View className="absolute inset-0">
-          {/* 1) this Pressable covers everything */}
-          <Pressable
-            onPress={() => setMenuVisible(false)}
-            className="absolute inset-0 bg-black/60 z-10"
-          />
-
-          {/* 2) your sheet lives here, only at the bottom */}
-          <View className="absolute bottom-0 inset-x-0 z-20">
-            <SafeAreaView
-              edges={['bottom']}
-              className="bg-white rounded-t-3xl px-4 pt-3 pb-6"
-            >
-              {/* header */}
-              <View className="items-center mb-4">
-                <View className="h-20 w-20 rounded-full bg-gray-200 items-center justify-center mb-2">
-                  <Text className="text-3xl font-bold text-gray-700">U</Text>
-                </View>
-                <Text className="text-lg font-semibold">Username</Text>
-              </View>
-
-              {/* menu items */}
-              <Pressable
-                onPress={() => {
-                  /* navigate to Settings… */
-                  setMenuVisible(false);
-                }}
-                className="py-3 border-t border-gray-100"
-              >
-                <Text className="text-base">Settings</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={() => {
-                  setMenuVisible(false);
-                  dispatch(logout());
-                }}
-                disabled={isLoading}
-                className="py-3 border-t border-gray-100"
-              >
-                <Text className="text-base text-red-600">Logout</Text>
-              </Pressable>
-            </SafeAreaView>
-          </View>
+      {isLoading ? (
+        <ActivityIndicator style={{ marginTop: 20 }} />
+      ) : isError ? (
+        <View style={styles.center}>
+          <Text style={styles.error}>Failed to load followed creators.</Text>
+          <Pressable onPress={refetch}>
+            <Text style={styles.retry}>Tap to retry</Text>
+          </Pressable>
         </View>
-      </Modal>
-    </SafeAreaView>
-  );
-};
+      ) : (
+        <FlatList
+          data={data}
+          keyExtractor={(c) => c.id.toString()}
+          renderItem={renderItem}
+          contentContainerStyle={{ paddingTop: AVATAR_TOP_OFFSET + 16 }}
+          ListHeaderComponent={() => (
+            <Text style={styles.sectionTitle}>Following creators</Text>
+          )}
+          ListEmptyComponent={() => (
+            <Text style={styles.noResults}>
+              You’re not following any creators yet.
+            </Text>
+          )}
+        />
+      )}
 
-export default HomeScreen;
+      <AvatarMenu topOffset={AVATAR_TOP_OFFSET} />
+    </>
+  );
+}
+
+const styles = StyleSheet.create({
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+
+  card: {
+    flexDirection: 'row',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderColor: '#EEE',
+    alignItems: 'center',
+  },
+  avatar: { width: 48, height: 48, borderRadius: 24 },
+  avatarPlaceholder: {
+    backgroundColor: '#DDD',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  initial: { fontSize: 18, color: '#666' },
+
+  info: { flex: 1, marginLeft: 12 },
+  username: { fontSize: 16, fontWeight: '600' },
+  description: { color: '#666', marginTop: 4 },
+
+  verified: { color: '#4CAF50', fontSize: 18 },
+
+  noResults: {
+    textAlign: 'center',
+    marginTop: 20,
+    color: '#666',
+  },
+
+  error: { textAlign: 'center', color: 'red' },
+  retry: {
+    marginTop: 8,
+    color: '#007AFF',
+    textDecorationLine: 'underline',
+  },
+});

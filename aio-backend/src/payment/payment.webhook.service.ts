@@ -18,35 +18,30 @@ export class PaymentWebhookService {
 
   async handleEvent(event: Stripe.Event) {
     switch (event.type) {
-      // 1. When Checkout completes, create your DB record
       case 'checkout.session.completed':
         await this.handleCheckoutSessionCompleted(
           event.data.object as Stripe.Checkout.Session,
         );
         break;
 
-      // 2. When a subscription invoice succeeds, update its currentPeriodEnd
       case 'invoice.payment_succeeded':
         await this.handleInvoicePaymentSucceeded(
           event.data.object as Stripe.Invoice,
         );
         break;
 
-      // 3. If the subscription is manually updated (e.g. upgrade / cancel at period end)
       case 'customer.subscription.updated':
         await this.handleSubscriptionUpdated(
           event.data.object as Stripe.Subscription,
         );
         break;
 
-      // 4. When Stripe actually deletes (ends) the subscription
       case 'customer.subscription.deleted':
         await this.handleSubscriptionEnded(
           event.data.object as Stripe.Subscription,
         );
         break;
 
-      // 5. Payment failure → mark cancel_at_period_end + isCancelled
       case 'invoice.payment_failed':
         await this.handleInvoicePaymentFailed(
           event.data.object as Stripe.Invoice,
@@ -103,7 +98,7 @@ export class PaymentWebhookService {
             createdAt: new Date(stripeSub.created * 1000),
             updatedAt: new Date(),
             currentPeriodEnd: new Date(
-              stripeSub.items[0].current_period_end * 1000,
+              stripeSub.items.data[0].current_period_end * 1000,
             ),
             isCancelled: false,
             isEnded: false,
@@ -150,10 +145,18 @@ export class PaymentWebhookService {
     }
 
     try {
-      const periodEnd =
-        invoice.period_end || invoice.lines.data[0]?.period?.end;
+      const periodEnd = invoice.lines.data[0]?.period?.end;
       if (!periodEnd) {
         this.logger.warn(`Cannot find period_end on invoice ${invoice.id}`);
+        return;
+      }
+
+      const isSubExist = await this.prismaService.subscription.findUnique({
+        where: {
+          subscriptionStripeId: subId,
+        },
+      });
+      if (!isSubExist) {
         return;
       }
 
@@ -185,7 +188,15 @@ export class PaymentWebhookService {
 
   private async handleSubscriptionUpdated(subscription: Stripe.Subscription) {
     try {
-      // Look up your Plan by its Stripe priceId
+      const isSubExist = await this.prismaService.subscription.findUnique({
+        where: {
+          subscriptionStripeId: subscription.id,
+        },
+      });
+      if (!isSubExist) {
+        return;
+      }
+
       const priceId = subscription.items.data[0]?.price.id;
       const plan = priceId
         ? await this.prismaService.plan.findUnique({
@@ -196,13 +207,12 @@ export class PaymentWebhookService {
       const updateData: any = {
         isCancelled: subscription.cancel_at_period_end ?? false,
         currentPeriodEnd: new Date(
-          subscription.items[0].current_period_end * 1000,
+          subscription.items.data[0].current_period_end * 1000,
         ),
         updatedAt: new Date(),
       };
       if (plan) updateData.planId = plan.id;
 
-      // If Stripe status is “canceled” (immediate end), mark ended
       if (subscription.status === 'canceled') {
         updateData.isEnded = true;
       }
@@ -245,7 +255,7 @@ export class PaymentWebhookService {
       await this.prismaService.subscriptionEvent.create({
         data: {
           subscriptionId: updatedSubscription.id,
-          type: 'EXPIRED', // or CANCELED if you prefer
+          type: 'EXPIRED',
         },
       });
       this.logger.log(`Subscription ${subscription.id} marked as ended`);
@@ -265,10 +275,8 @@ export class PaymentWebhookService {
     }
 
     try {
-      // 1) Cancel the subscription immediately in Stripe
       await this.stripe.subscriptions.cancel(subId);
 
-      // 2) Mark as cancelled AND ended in your DB
       const updatedSubscription = await this.prismaService.subscription.update({
         where: { subscriptionStripeId: subId },
         data: {
@@ -317,11 +325,9 @@ export class PaymentWebhookService {
     }
   }
 
-  /** Basil-style lookup for the subscription ID on an Invoice */
   private async getSubscriptionIdFromInvoice(
     invoice: Stripe.Invoice,
   ): Promise<string | undefined> {
-    // 1) Basil: invoice.parent.subscription_details.subscription
     if (
       invoice.parent?.type === 'subscription_details' &&
       invoice.parent.subscription_details?.subscription
@@ -329,7 +335,6 @@ export class PaymentWebhookService {
       return invoice.parent.subscription_details.subscription as string;
     }
 
-    // 2) fallback: line item’s parent.subscription_item_details.subscription_item
     const line = invoice.lines.data.find(
       (li) => li.parent?.type === 'subscription_item_details',
     );

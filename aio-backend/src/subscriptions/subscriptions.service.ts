@@ -50,7 +50,7 @@ export class SubscriptionsService {
     });
     if (!plan) throw new NotFoundException(`Plan ${planId} not found`);
 
-    if (plan.creatorId === userId) {
+    if (plan.creator.userId === userId) {
       throw new ForbiddenException(`You can’t subscribe to your own plan`);
     }
 
@@ -68,6 +68,11 @@ export class SubscriptionsService {
       mode: 'subscription',
       customer: user.customerId,
       line_items: [{ price: plan.priceId, quantity: 1 }],
+      metadata: {
+        userId: userId.toString(),
+        creatorId: plan.creatorId,
+        planId,
+      },
       subscription_data: {
         application_fee_percent: 3,
         metadata: {
@@ -79,27 +84,24 @@ export class SubscriptionsService {
           destination: plan.creator.connectAccountId,
         },
       },
-      success_url: this.getReturnUrl(clientType),
-      cancel_url: this.getReturnUrl(clientType),
+      success_url: this.getReturnUrl(clientType) + `/${plan.creatorId}`,
+      cancel_url: this.getReturnUrl(clientType) + `/${plan.creatorId}`,
     });
   }
 
-  async getPortal(
-    userId: number,
-    subscriptionId: number,
-    clientType: ClientTypes,
-  ) {
-    const sub = await this.prisma.subscription.findUnique({
-      where: { id: subscriptionId, userId, isEnded: false },
+  async getPortal(userId: number, creatorId: number, clientType: ClientTypes) {
+    console.log(userId, creatorId);
+    const sub = await this.prisma.subscription.findFirst({
+      where: { creatorId, userId, isEnded: false },
     });
     if (!sub) {
-      throw new NotFoundException(`Subscription ${subscriptionId} not found`);
+      throw new NotFoundException(`Subscription is not found`);
     }
     const user = await this.getUserOrThrow(userId);
 
     const session = await this.stripeClient.billingPortal.sessions.create({
       customer: user.customerId,
-      return_url: this.getReturnUrl(clientType),
+      return_url: this.getReturnUrl(clientType) + `/${creatorId}`,
     });
     return { url: session.url };
   }
@@ -121,7 +123,7 @@ export class SubscriptionsService {
 
     if (!sub) {
       throw new NotFoundException(
-        `No active subscription to creator ${creatorId} found for user ${userId}`,
+        `No active subscription to creator found for user`,
       );
     }
 
@@ -130,17 +132,15 @@ export class SubscriptionsService {
 
   async previewSubscriptionUpgrade(
     userId: number,
-    subscriptionId: number,
+    creatorId: number,
     newPlanId: number,
   ) {
-    const subRecord = await this.prisma.subscription.findUnique({
-      where: { id: subscriptionId, userId, isEnded: false },
+    const subRecord = await this.prisma.subscription.findFirst({
+      where: { creatorId, userId, isEnded: false },
       select: { subscriptionStripeId: true },
     });
     if (!subRecord) {
-      throw new NotFoundException(
-        `Subscription ${subscriptionId} not found for user ${userId}`,
-      );
+      throw new NotFoundException(`Subscription not found`);
     }
 
     const stripeSub = await this.stripeClient.subscriptions.retrieve(
@@ -187,13 +187,13 @@ export class SubscriptionsService {
 
   async upgradeSubscription(
     userId: number,
-    subscriptionId: number,
+    creatorId: number,
     newPlanId: number,
   ) {
     const [subRecord, plan] = await Promise.all([
-      this.prisma.subscription.findUnique({
-        where: { id: subscriptionId, userId, isEnded: false },
-        select: { subscriptionStripeId: true },
+      this.prisma.subscription.findFirst({
+        where: { creatorId, userId, isEnded: false },
+        select: { subscriptionStripeId: true, id: true },
       }),
       this.prisma.plan.findUnique({
         where: { id: newPlanId },
@@ -201,9 +201,7 @@ export class SubscriptionsService {
       }),
     ]);
     if (!subRecord) {
-      throw new NotFoundException(
-        `Subscription ${subscriptionId} not found for user ${userId}`,
-      );
+      throw new NotFoundException(`Subscription is not found`);
     }
     if (!plan) {
       throw new NotFoundException(`Plan ${newPlanId} not found`);
@@ -228,7 +226,7 @@ export class SubscriptionsService {
     );
 
     await this.prisma.subscription.update({
-      where: { id: subscriptionId },
+      where: { id: subRecord.id },
       data: {
         planId: newPlanId,
         subscriptionStripeId: updatedSub.id,
@@ -252,7 +250,6 @@ export class SubscriptionsService {
     }
 
     return {
-      subscriptionId,
       currentPeriodStart: updatedItem.current_period_start,
       currentPeriodEnd: updatedItem.current_period_end,
     };

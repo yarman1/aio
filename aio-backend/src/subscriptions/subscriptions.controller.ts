@@ -27,9 +27,6 @@ import { Response } from 'express';
 export class SubscriptionsController {
   constructor(private readonly subscriptionsService: SubscriptionsService) {}
 
-  //async handleStripeWebhook() {}
-  // webhook handled in payment
-
   @Get('/checkout-session/:planId')
   async checkoutSession(
     @User() user: JwtRtPayload,
@@ -56,15 +53,15 @@ export class SubscriptionsController {
     return plainToInstance(ReadSubscriptionDto, res);
   }
 
-  @Get('/portal/:subscriptionId')
+  @Get('/portal/:creatorId')
   async getPortal(
     @User() user: JwtRtPayload,
     @ClientType() clientType: ClientTypes,
-    @Param('subscriptionId', ParseIntPipe) subscriptionId: number,
+    @Param('creatorId', ParseIntPipe) creatorId: number,
   ) {
     const res = await this.subscriptionsService.getPortal(
       user.sub,
-      subscriptionId,
+      creatorId,
       clientType,
     );
     return plainToInstance(PortalDto, res);
@@ -77,7 +74,7 @@ export class SubscriptionsController {
   ) {
     const res = await this.subscriptionsService.previewSubscriptionUpgrade(
       user.sub,
-      dto.subscriptionId,
+      dto.creatorId,
       dto.newPlanId,
     );
     return plainToInstance(PreviewSubscriptionUpgradeDto, res);
@@ -91,7 +88,7 @@ export class SubscriptionsController {
   ) {
     await this.subscriptionsService.upgradeSubscription(
       user.sub,
-      dto.subscriptionId,
+      dto.creatorId,
       dto.newPlanId,
     );
     res.sendStatus(HttpStatus.OK);

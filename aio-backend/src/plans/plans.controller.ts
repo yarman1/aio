@@ -30,7 +30,6 @@ import { plainToInstance } from 'class-transformer';
 export class PlansController {
   constructor(private readonly plansService: PlansService) {}
 
-  // — existing routes —
   @Post()
   async create(
     @Body() dto: CreatePlanDto,
@@ -60,11 +59,7 @@ export class PlansController {
     return plainToInstance(ReadExternalBenefitDto, bens);
   }
 
-  // — new routes —
-
-  // CRUD on creator categories
   @Post('/creator-category')
-  @UsePipes(new ValidationPipe({ whitelist: true }))
   async createCreatorCategory(
     @User(GetCreatorIdPipe) creatorId: number,
     @Body() dto: CreateCreatorCategoryDto,
@@ -82,7 +77,6 @@ export class PlansController {
   }
 
   @Post('/external-benefit')
-  @UsePipes(new ValidationPipe({ whitelist: true }))
   async createExternalBenefit(
     @User(GetCreatorIdPipe) creatorId: number,
     @Body() dto: CreateExternalBenefitDto,
@@ -114,12 +108,6 @@ export class PlansController {
     @Param('planId', ParseIntPipe) planId: number,
   ) {
     const plan = await this.plansService.getPlanById(planId, creatorId);
-    return plainToInstance(ReadPlanDto, plan);
-  }
-
-  @Get('/:planId/public')
-  async getPlanPublic(@Param('planId', ParseIntPipe) planId: number) {
-    const plan = await this.plansService.getPlanPublic(planId);
     return plainToInstance(ReadPlanDto, plan);
   }
 

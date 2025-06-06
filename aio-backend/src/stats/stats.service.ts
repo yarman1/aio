@@ -1,19 +1,39 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
-import { subDays, startOfDay, endOfDay } from 'date-fns';
+import { subDays } from 'date-fns';
 
 @Injectable()
 export class StatsService {
   private readonly logger = new Logger(StatsService.name);
 
-  // every day at 2:00
   @Cron('0 2 * * *')
   async aggregateDaily() {
     const prisma = this.prisma;
-    const targetDate = subDays(new Date(), 1);
-    const dayStart = startOfDay(targetDate);
-    const dayEnd = endOfDay(targetDate);
+    const yesterday = subDays(new Date(), 1);
+
+    const dayStart = new Date(
+      Date.UTC(
+        yesterday.getFullYear(),
+        yesterday.getMonth(),
+        yesterday.getDate(),
+        0,
+        0,
+        0,
+        0,
+      ),
+    );
+    const dayEnd = new Date(
+      Date.UTC(
+        yesterday.getFullYear(),
+        yesterday.getMonth(),
+        yesterday.getDate(),
+        23,
+        59,
+        59,
+        999,
+      ),
+    );
 
     const categories = await prisma.creatorCategory.findMany({
       select: { id: true, creatorId: true, name: true },
@@ -54,12 +74,12 @@ export class StatsService {
           prisma.mediaPlay.count({
             where: {
               post: { categoryId },
-              playedAt: { gte: dayStart, lt: dayEnd },
+              createdAt: { gte: dayStart, lt: dayEnd },
             },
           }),
         ],
       );
-
+      console.log(dayStart);
       await prisma.creatorCategoryStats.upsert({
         where: {
           creatorCategoryId_date: {
@@ -90,28 +110,28 @@ export class StatsService {
             where: {
               subscription: { planId },
               type: 'CREATED',
-              occurredAt: { gte: dayStart, lt: dayEnd },
+              createdAt: { gte: dayStart, lt: dayEnd },
             },
           }),
           prisma.subscriptionEvent.count({
             where: {
               subscription: { planId },
               type: 'RENEWED',
-              occurredAt: { gte: dayStart, lt: dayEnd },
+              createdAt: { gte: dayStart, lt: dayEnd },
             },
           }),
           prisma.subscriptionEvent.count({
             where: {
               subscription: { planId },
               type: 'CANCELED',
-              occurredAt: { gte: dayStart, lt: dayEnd },
+              createdAt: { gte: dayStart, lt: dayEnd },
             },
           }),
           prisma.subscriptionEvent.count({
             where: {
               subscription: { planId },
               type: 'EXPIRED',
-              occurredAt: { gte: dayStart, lt: dayEnd },
+              createdAt: { gte: dayStart, lt: dayEnd },
             },
           }),
         ]);
@@ -135,7 +155,7 @@ export class StatsService {
       });
     }
 
-    this.logger.log(`Aggregated stats for ${targetDate.toDateString()}`);
+    this.logger.log(`Aggregated stats for ${yesterday.toDateString()}`);
   }
 
   constructor(private prisma: PrismaService) {}

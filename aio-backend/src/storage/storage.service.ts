@@ -1,36 +1,28 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
-  CompleteMultipartUploadCommand,
-  CreateMultipartUploadCommand,
   DeleteObjectCommand,
-  ListPartsCommand,
+  GetObjectCommand,
   PutObjectCommand,
   S3Client,
-  UploadPartCommand,
-  GetObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { URL } from 'url';
 
 @Injectable()
 export class StorageService {
   private publicBucketName: string;
   private privateBucketName: string;
   private partSize = 20 * 1024 * 1024;
-  private s3Client: S3Client;
 
-  constructor(configService: ConfigService) {
+  constructor(
+    configService: ConfigService,
+    private readonly s3Client: S3Client,
+  ) {
     this.publicBucketName = configService.get<string>('S3_PUBLIC_BUCKET_NAME');
     this.privateBucketName = configService.get<string>(
       'S3_PRIVATE_BUCKET_NAME',
     );
-    this.s3Client = new S3Client({
-      region: configService.get('AWS_REGION'),
-      credentials: {
-        accessKeyId: configService.get('AWS_ACCESS_KEY_ID'),
-        secretAccessKey: configService.get('AWS_SECRET_ACCESS_KEY'),
-      },
-    });
   }
 
   async uploadSmallFile(params: {
@@ -52,83 +44,40 @@ export class StorageService {
       }),
     );
 
+    const endpoint = await this.s3Client.config.endpoint();
+    const baseUrl = `${endpoint.protocol}//${'192.168.0.119'}${endpoint.port ? ':' + endpoint.port : ''}`;
+
     return {
       key,
-      url: `${this.s3Client.config.endpoint}/${bucket}/${key}`,
+      url: `${baseUrl}/${bucket}/${key}`,
     };
   }
 
-  async initiateMultipartUpload(
+  async getPresignedPutUrl(
     key: string,
     contentType: string,
-    fileSize: number,
-    isPrivate: boolean,
+    isPrivate = false,
   ) {
-    const { UploadId } = await this.s3Client.send(
-      new CreateMultipartUploadCommand({
-        Bucket: isPrivate ? this.privateBucketName : this.publicBucketName,
-        Key: key,
-        ContentType: contentType,
-      }),
-    );
+    const bucket = isPrivate ? this.privateBucketName : this.publicBucketName;
 
-    const totalParts = Math.ceil(fileSize / this.partSize);
-    const presignedUrls = await Promise.all(
-      Array.from({ length: totalParts }, (_, i) => {
-        const partNumber = i + 1;
-        const cmd = new UploadPartCommand({
-          Bucket: isPrivate ? this.privateBucketName : this.publicBucketName,
-          Key: key,
-          UploadId,
-          PartNumber: partNumber,
-        });
-        return getSignedUrl(this.s3Client, cmd, { expiresIn: 3600 }).then(
-          (url) => ({
-            partNumber,
-            url,
-          }),
-        );
-      }),
-    );
+    const command = new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      ContentType: contentType,
+      ACL: isPrivate ? 'private' : 'public-read',
+    });
 
-    return { uploadId: UploadId!, key, presignedUrls, partSize: this.partSize };
-  }
+    const rawUrl = await getSignedUrl(this.s3Client, command, {
+      expiresIn: 3600,
+    });
 
-  async listUploadedParts(uploadId: string, key: string, isPrivate: boolean) {
-    const resp = await this.s3Client.send(
-      new ListPartsCommand({
-        Bucket: isPrivate ? this.privateBucketName : this.publicBucketName,
-        Key: key,
-        UploadId: uploadId,
-      }),
-    );
-    return (
-      resp.Parts?.map((p) => ({
-        PartNumber: p.PartNumber!,
-        ETag: p.ETag!,
-      })) || []
-    );
-  }
+    const parsedUrl = new URL(rawUrl);
+    parsedUrl.hostname = '192.168.0.119';
+    parsedUrl.port = '9000';
 
-  async completeMultipartUpload(
-    uploadId: string,
-    key: string,
-    parts: Array<{ PartNumber: number; ETag: string }>,
-    isPrivate: boolean,
-  ) {
-    await this.s3Client.send(
-      new CompleteMultipartUploadCommand({
-        Bucket: isPrivate ? this.privateBucketName : this.publicBucketName,
-        Key: key,
-        UploadId: uploadId,
-        MultipartUpload: { Parts: parts },
-      }),
-    );
-    // return a URL if you like:
-    return {
-      key,
-      url: `${this.s3Client.config.endpoint}/${isPrivate ? this.privateBucketName : this.publicBucketName}/${key}`,
-    };
+    const customUrl = parsedUrl.toString();
+
+    return { key, url: customUrl };
   }
 
   async deleteFile(key: string, isPrivate = false): Promise<void> {
@@ -146,10 +95,18 @@ export class StorageService {
     expiresIn: number = 3600,
   ): Promise<string> {
     const command = new GetObjectCommand({
-      Bucket: this.publicBucketName,
+      Bucket: this.privateBucketName,
       Key: key,
     });
 
-    return getSignedUrl(this.s3Client, command, { expiresIn });
+    const rawUrl = await getSignedUrl(this.s3Client, command, {
+      expiresIn,
+    });
+
+    const parsedUrl = new URL(rawUrl);
+    parsedUrl.hostname = '192.168.0.119';
+    parsedUrl.port = '9000';
+
+    return parsedUrl.toString();
   }
 }

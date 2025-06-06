@@ -195,8 +195,13 @@ export class AuthService {
     await this.changePassword(userId, dto.newPassword);
 
     const tokens = await this.getTokens(userId, user.role as Role);
-    if (res) {
+    if (!res) {
       this.setAuthCookies(res, tokens);
+      return;
+    }
+
+    if (res) {
+      return tokens;
     }
   }
 
@@ -277,6 +282,18 @@ export class AuthService {
     await this.mailService.sendPasswordRecoveryEmail(email, token);
   }
 
+  async requestRecoveryMobile(email: string) {
+    const user = await this.usersService.findUserByEmail(email);
+    if (!user) {
+      throw new ForbiddenException('User with this email does not exist');
+    }
+    const job = await this.recoveryQueue.add({ email }, { removeOnFail: true });
+    await job.finished();
+    const token = this.generateShortToken();
+    await this.redisService.setKey(token, email, ms('15m'));
+    await this.mailService.sendPasswordRecoveryEmailMobile(email, token);
+  }
+
   async resetPassword(dto: ResetPasswordDto) {
     const { token, newPassword } = dto;
     const email = await this.redisService.getValue(token);
@@ -293,7 +310,10 @@ export class AuthService {
     if (user.isEmailConfirmed) {
       throw new BadRequestException('Email is confirmed');
     }
-    const job = await this.recoveryQueue.add({ userId });
+    const job = await this.confirmationQueue.add(
+      { userId },
+      { removeOnFail: true },
+    );
     await job.finished();
     const token = this.generateShortToken();
     const key = `${userId}-confirmation-token`;
@@ -345,7 +365,7 @@ export class AuthService {
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
         secret: this.config.get<string>('AT_SECRET'),
-        expiresIn: '10m',
+        expiresIn: '7d',
       }),
       this.jwtService.signAsync(payload, {
         secret: this.config.get<string>('RT_SECRET'),
@@ -366,7 +386,6 @@ export class AuthService {
   }
 
   async deleteUser(userId: number) {
-    // add deleting stripe customers
     await this.usersService.remove(userId);
     await this.redisService.deleteSubset(`rt:${userId}:*`);
   }

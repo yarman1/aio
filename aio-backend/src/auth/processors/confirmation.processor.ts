@@ -15,7 +15,7 @@ export class ConfirmationQueue {
     const key = `confirmation-flag:${userId}`;
     const flag: string | null = await this.redisService.getValue(key);
     if (!flag) {
-      await this.redisService.setKey(key, '1', ms('10m'));
+      await this.redisService.setKey(key, '1', ms('15m'));
       return;
     }
     throw new HttpException(

@@ -112,7 +112,7 @@ export class PlansService {
       },
       productId: newProduct.id,
       name: newProduct.name,
-      createdAt: new Date(newProduct.created),
+      createdAt: new Date(newProduct.created * 1000),
       description: newProduct.description,
       ...priceInfo,
     };
@@ -136,16 +136,10 @@ export class PlansService {
         creatorCategories: true,
       },
     });
-    return plan;
-
-    // return {
-    //   id: newProduct.id,
-    //   name: newProduct.name,
-    //   active: newProduct.active,
-    //   created: new Date(newProduct.created).toUTCString(),
-    //   description: newProduct.description,
-    //   ...priceInfo,
-    // };
+    return {
+      ...plan,
+      price: plan.price.toString(),
+    };
   }
 
   async getAllCreatorCategories(creatorId: number): Promise<CreatorCategory[]> {
@@ -303,7 +297,7 @@ export class PlansService {
       description: dto.description,
     });
 
-    return this.prismaService.plan.update({
+    const newPlan = await this.prismaService.plan.update({
       where: { id: dto.planId },
       data: {
         name: dto.name,
@@ -320,6 +314,11 @@ export class PlansService {
         externalBenefits: true,
       },
     });
+
+    return {
+      ...newPlan,
+      price: newPlan.price.toString(),
+    };
   }
 
   async getPlanById(planId: number, creatorId: number) {
@@ -328,12 +327,19 @@ export class PlansService {
         id: planId,
         creatorId,
       },
+      include: {
+        creatorCategories: true,
+        externalBenefits: true,
+      },
     });
     if (!plan) {
       throw new NotFoundException('This plan is not existed');
     }
 
-    return plan;
+    return {
+      ...plan,
+      price: plan.price.toString(),
+    };
   }
 
   async getPlanPublic(planId: number) {
@@ -360,15 +366,24 @@ export class PlansService {
   }
 
   async getPlans(creatorId: number) {
-    return this.prismaService.plan.findMany({
+    const plans = await this.prismaService.plan.findMany({
       where: {
         creatorId,
       },
+      include: {
+        externalBenefits: true,
+        creatorCategories: true,
+      },
     });
+
+    return plans.map((plan) => ({
+      ...plan,
+      price: plan.price.toString(),
+    }));
   }
 
   async getPlansPublic(creatorId: number) {
-    return this.prismaService.plan.findMany({
+    const plans = await this.prismaService.plan.findMany({
       where: {
         creatorId,
         isArchived: false,
@@ -382,11 +397,14 @@ export class PlansService {
         creatorCategories: true,
       },
     });
+
+    return plans.map((plan) => ({
+      ...plan,
+      price: plan.price.toString(),
+    }));
   }
 
-  // archive, cancel all subscriptions and notify through email
   async changePlanStatus(creatorId: number, planId: number) {
-    // 1) Verify plan exists & belongs to this creator
     const plan = await this.prismaService.plan.findUnique({
       where: { id: planId },
       select: { creatorId: true, isArchived: true },
@@ -395,20 +413,21 @@ export class PlansService {
       throw new NotFoundException('Plan not found');
     }
 
-    // 2) Toggle archive flag
     const willArchive = !plan.isArchived;
     const updatedPlan = await this.prismaService.plan.update({
       where: { id: planId },
       data: { isArchived: willArchive },
+      include: {
+        creatorCategories: true,
+        externalBenefits: true,
+      },
     });
 
-    // 3) Fetch all non-ended subscriptions to this plan
     const subs = await this.prismaService.subscription.findMany({
       where: { planId, isEnded: false },
     });
 
     if (willArchive) {
-      // — ARCHIVE: cancel at period end & mark cancelled
       for (const s of subs) {
         try {
           await this.stripeClient.subscriptions.update(s.subscriptionStripeId, {
@@ -431,7 +450,6 @@ export class PlansService {
         },
       });
     } else {
-      // — UN-ARCHIVE: reopen any previously cancelled subscriptions
       for (const s of subs.filter((x) => x.isCancelled)) {
         try {
           await this.stripeClient.subscriptions.update(s.subscriptionStripeId, {
@@ -455,7 +473,6 @@ export class PlansService {
       });
     }
 
-    // 4) Notify users (you can hook in your email service here)
     for (const s of subs) {
       this.logger.log(
         `TODO: notify user ${s.userId} that plan ${planId} has been ${
@@ -464,7 +481,10 @@ export class PlansService {
       );
     }
 
-    return updatedPlan;
+    return {
+      ...updatedPlan,
+      price: updatedPlan.price.toString(),
+    };
   }
 
   async getMyArchivedPlan(userId: number, planId: number) {
@@ -477,9 +497,7 @@ export class PlansService {
       select: { creatorId: true },
     });
     if (!sub) {
-      throw new NotFoundException(
-        `No active subscription found for user ${userId} & plan ${planId}`,
-      );
+      throw new NotFoundException(`No active subscription found for user`);
     }
 
     const plan = await this.prismaService.plan.findFirst({
@@ -494,12 +512,13 @@ export class PlansService {
       },
     });
     if (!plan) {
-      throw new NotFoundException(
-        `Archived plan ${planId} not found for creator ${sub.creatorId}`,
-      );
+      throw new NotFoundException(`Archived plan not found`);
     }
 
-    return plan;
+    return {
+      ...plan,
+      price: plan.price.toString(),
+    };
   }
 
   private checkPriceObject(product: Stripe.Product): PriceInfo | null {

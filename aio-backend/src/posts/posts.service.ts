@@ -1,25 +1,25 @@
 import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
-  BadRequestException,
-  ForbiddenException,
-  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import {
-  UpdatePostDto,
+  CreateCommentDto,
   SearchPostsDto,
-  LikePostDto,
-  RepostPostDto,
+  UpdateCommentDto,
+  UpdatePostDto,
   VotePollDto,
 } from './dto';
-import { CreateCommentDto, UpdateCommentDto } from './dto';
-import { PostType, PostStatus, Prisma } from '../generated/prisma/client';
-import { PostResponseDto, PostMediaResponseDto } from './dto/post.dto';
+import { PostStatus, PostType, Prisma } from '../generated/prisma/client';
+import { PostMediaResponseDto, PostResponseDto } from './dto/post.dto';
 import sanitizeHtml from 'sanitize-html';
 import { CreatePostDto } from './dto/create-post.dto';
 import { SetPollOptionsDto } from './dto/set-poll-options.dto';
+import { SearchPostsUsersDto } from './dto/search-posts-users.dto';
 
 type RawPostWithSubs = Prisma.PostGetPayload<{
   include: {
@@ -63,10 +63,9 @@ export class PostsService {
       throw new NotFoundException('Category not found');
     }
 
-    // Create post
     const post = await this.prisma.post.create({
       data: {
-        type: PostType.TEXT,
+        type: dto.type,
         name: dto.name,
         categoryId: dto.categoryId,
         status: PostStatus.DRAFT,
@@ -74,7 +73,7 @@ export class PostsService {
       },
     });
 
-    return this.getPostByCreator(post.id, creatorId);
+    return this.getPostByCreator(creatorId, post.id);
   }
 
   async updatePost(creatorId: number, postId: number, dto: UpdatePostDto) {
@@ -94,14 +93,12 @@ export class PostsService {
       throw new BadRequestException('You can only update your own posts');
     }
 
-    // Sanitize description if provided
     let sanitizedDescription = dto.description;
     if (dto.description) {
       sanitizedDescription = this.sanitizeRichText(dto.description);
     }
 
     await this.prisma.$transaction(async (tx) => {
-      // 1) delete comments if the flag has flipped off
       if (dto.commentsEnabled !== undefined && dto.commentsEnabled === false) {
         await tx.comment.deleteMany({ where: { postId } });
 
@@ -157,13 +154,30 @@ export class PostsService {
       throw new BadRequestException('Options must be greater than 1');
     }
 
-    await this.prisma.pollOption.deleteMany({ where: { poll: { postId } } });
+    let pollOptionsObj = await this.prisma.poll.findUnique({
+      where: { postId },
+    });
+
+    if (!pollOptionsObj) {
+      pollOptionsObj = await this.prisma.poll.create({
+        data: {
+          postId,
+        },
+      });
+    }
+
+    if (pollOptionsObj.isClosed) {
+      throw new BadRequestException('Poll is already closed');
+    }
+
+    await this.prisma.pollOption.deleteMany({
+      where: { poll: { id: pollOptionsObj.id } },
+    });
     await this.prisma.pollOption.createMany({
-      data: dto.options.map((o, idx) => ({
-        pollId: postId,
+      data: dto.options.map((o) => ({
+        pollId: pollOptionsObj.id,
         text: o.text,
         voteCount: 0,
-        order: idx,
       })),
     });
     await this.recalcReadyForActivation(postId);
@@ -172,7 +186,6 @@ export class PostsService {
   }
 
   async closePoll(creatorId: number, postId: number): Promise<PostResponseDto> {
-    // 1) Load post + poll + category
     const post = await this.prisma.post.findFirst({
       where: { id: postId },
       include: { category: true, poll: true },
@@ -181,34 +194,28 @@ export class PostsService {
       throw new NotFoundException('Post not found');
     }
 
-    // 2) Only the creator can close it
     if (post.category.creatorId !== creatorId) {
       throw new ForbiddenException('You can only close your own polls');
     }
 
-    // 3) Must be a poll post
     if (post.type !== PostType.POLL || !post.poll) {
       throw new BadRequestException('Only poll posts can be closed');
     }
 
-    // 4) Check not already closed
     if (post.poll.isClosed) {
       throw new ConflictException('This poll is already closed');
     }
 
-    // 5) Close it
     await this.prisma.poll.update({
       where: { postId: postId },
       data: { isClosed: true },
     });
 
-    // 6) Return the updated owner‐view of the post
     return this.getPostByCreator(creatorId, postId);
   }
 
   private sanitizeRichText(content: string): string {
     return sanitizeHtml(content, {
-      // only these tags…
       allowedTags: [
         'b',
         'i',
@@ -234,20 +241,16 @@ export class PostsService {
         'div',
         'span',
       ],
-      // and only these attributes on those tags
       allowedAttributes: {
         a: ['href', 'name', 'target'],
         img: ['src', 'alt', 'title', 'width', 'height'],
         '*': ['class', 'style'],
       },
-      // enforce https/http/data on img/src and href
       allowedSchemes: ['http', 'https', 'mailto', 'data'],
       allowedSchemesByTag: {
         img: ['http', 'https', 'data'],
       },
-      // strip out any empty elements, comments, etc.
       selfClosing: ['br', 'hr', 'img'],
-      // do not allow JavaScript URLs
       allowProtocolRelative: false,
     });
   }
@@ -301,7 +304,6 @@ export class PostsService {
   }
 
   async getPostById(id: number, userId?: number): Promise<PostResponseDto> {
-    // 1) Fetch exactly one ACTIVE post, with the relations we need
     const post = await this.prisma.post.findUnique({
       where: { id, status: PostStatus.ACTIVE },
       include: {
@@ -313,9 +315,8 @@ export class PostsService {
             creator: {
               include: {
                 subscriptions: {
-                  // if userId is provided, filter real subs; otherwise filter on userId = 0 → empty array
                   where: userId
-                    ? { userId, currentPeriodEnd: { gt: new Date() } }
+                    ? { userId, isEnded: { equals: false } }
                     : { userId: 0 },
                   select: {
                     plan: {
@@ -333,7 +334,7 @@ export class PostsService {
     });
 
     if (!post) {
-      throw new NotFoundException(`Post ${id} not found`);
+      throw new NotFoundException(`Post is not found`);
     }
 
     const today = new Date();
@@ -357,7 +358,6 @@ export class PostsService {
       });
     }
 
-    // 2) Determine whether the caller can see the FULL post
     const hasAccess =
       post.category.isPublic ||
       (!!userId &&
@@ -365,7 +365,6 @@ export class PostsService {
           sub.plan.creatorCategories.some((c) => c.id === post.categoryId),
         ));
 
-    // 3) If no access → limited DTO
     if (!hasAccess) {
       return {
         id: post.id,
@@ -379,12 +378,11 @@ export class PostsService {
           name: post.category.name,
           isPublic: post.category.isPublic,
         },
-        commentsEnabled: post.commentsEnabled,
-        isReadyForActivation: post.isReadyForActivation,
         createdAt: post.createdAt,
         updatedAt: post.updatedAt,
         likesCount: post.likesCount,
         repostsCount: post.repostsCount,
+        hasAccess: false,
       };
     }
 
@@ -413,7 +411,19 @@ export class PostsService {
       );
     }
 
-    // 4) Return full DTO with URLs
+    let likedByCurrentUser = false;
+    if (userId) {
+      const existingLike = await this.prisma.postLike.findUnique({
+        where: {
+          unique_like_per_user: {
+            postId: id,
+            userId,
+          },
+        },
+      });
+      likedByCurrentUser = !!existingLike;
+    }
+
     return {
       id: post.id,
       type: post.type,
@@ -432,6 +442,8 @@ export class PostsService {
       updatedAt: post.updatedAt,
       likesCount: post.likesCount,
       repostsCount: post.repostsCount,
+      isLiked: likedByCurrentUser,
+      hasAccess: true,
 
       headerKey: post.headerKey,
       headerUrl,
@@ -465,7 +477,6 @@ export class PostsService {
     };
   }
 
-  /** Helper to fetch nested comments */
   private async loadComments(postId: number) {
     return this.prisma.comment.findMany({
       where: { postId, parentId: null },
@@ -499,12 +510,10 @@ export class PostsService {
       throw new BadRequestException('You can only update your own posts');
     }
 
-    // Delete old header if exists
     if (post.headerKey) {
       await this.storageService.deleteFile(post.headerKey);
     }
 
-    // Upload new header
     const { key } = await this.storageService.uploadSmallFile({
       key: `posts/${postId}/header.${file.originalname.split('.').pop()}`,
       buffer: file.buffer,
@@ -512,7 +521,6 @@ export class PostsService {
       isPrivate: true,
     });
 
-    // Update post
     await this.prisma.post.update({
       where: { id: postId },
       data: { headerKey: key },
@@ -544,16 +552,10 @@ export class PostsService {
       throw new BadRequestException('Only text posts can have images');
     }
 
-    // Check if we already have 5 images
-    const imageCount = await this.prisma.postImage.count({
-      where: { postId },
-    });
-
-    if (imageCount >= 5) {
-      throw new BadRequestException('Maximum 5 images allowed per post');
+    if (order < 1 || order > 5) {
+      throw new BadRequestException('Order must be between 1 and 5');
     }
 
-    // Upload image
     const { key } = await this.storageService.uploadSmallFile({
       key: `posts/${postId}/images/${order}.${file.originalname.split('.').pop()}`,
       buffer: file.buffer,
@@ -561,9 +563,14 @@ export class PostsService {
       isPrivate: true,
     });
 
-    // Create image record
-    await this.prisma.postImage.create({
-      data: {
+    await this.prisma.postImage.upsert({
+      where: {
+        postId_order: { postId, order },
+      },
+      update: {
+        key,
+      },
+      create: {
         postId,
         key,
         order,
@@ -573,11 +580,38 @@ export class PostsService {
     return this.getPostByCreator(creatorId, postId);
   }
 
+  async deletePostImage(creatorId: number, postId: number, imageId: number) {
+    const post = await this.prisma.post.findFirst({
+      where: { id: postId },
+      include: { category: true, images: true },
+    });
+
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+
+    if (post.category.creatorId !== creatorId) {
+      throw new BadRequestException('You can only update your own posts');
+    }
+
+    const image = post.images.find((img) => img.id === imageId);
+    if (!image) {
+      throw new NotFoundException('Image not found on this post');
+    }
+
+    await this.storageService.deleteFile(image.key);
+
+    await this.prisma.postImage.delete({
+      where: { id: imageId },
+    });
+
+    return this.getPostByCreator(creatorId, postId);
+  }
+
   async initiateMediaUpload(
     creatorId: number,
     postId: number,
     contentType: string,
-    fileSize: number,
   ) {
     const post = await this.prisma.post.findFirst({
       where: { id: postId },
@@ -601,19 +635,13 @@ export class PostsService {
     const extension = contentType.split('/')[1];
     const key = `posts/${postId}/media.${extension}`;
 
-    return this.storageService.initiateMultipartUpload(
-      key,
-      contentType,
-      fileSize,
-      true,
-    );
+    return this.storageService.getPresignedPutUrl(key, contentType, true);
   }
 
-  async completeMediaUpload(
+  async confirmMediaUpload(
     creatorId: number,
     postId: number,
-    uploadId: string,
-    parts: Array<{ PartNumber: number; ETag: string }>,
+    contentType: string,
   ) {
     const post = await this.prisma.post.findFirst({
       where: { id: postId },
@@ -634,27 +662,24 @@ export class PostsService {
       );
     }
 
-    const extension = post.media?.mediaKey?.split('.').pop() || 'mp4';
+    const extension = contentType.split('/')[1] || 'mp4';
     const key = `posts/${postId}/media.${extension}`;
 
-    const { key: mediaKey } = await this.storageService.completeMultipartUpload(
-      uploadId,
-      key,
-      parts,
-      true,
-    );
-
-    // Update media record
-    await this.prisma.postMedia.update({
+    await this.prisma.postMedia.upsert({
       where: { postId },
-      data: {
-        mediaKey,
+      update: {
+        mediaKey: key,
+        uploaded:
+          post.type === PostType.VIDEO ? !!post.media?.previewKey : true,
+      },
+      create: {
+        postId,
+        mediaKey: key,
         uploaded:
           post.type === PostType.VIDEO ? !!post.media?.previewKey : true,
       },
     });
 
-    // Update post readiness for activation
     await this.recalcReadyForActivation(postId);
 
     return this.getPostByCreator(creatorId, postId);
@@ -682,12 +707,10 @@ export class PostsService {
       throw new BadRequestException('Only video posts can have preview images');
     }
 
-    // Delete old preview if exists
     if (post.media?.previewKey) {
       await this.storageService.deleteFile(post.media.previewKey);
     }
 
-    // Upload new preview
     const { key } = await this.storageService.uploadSmallFile({
       key: `posts/${postId}/preview.${file.originalname.split('.').pop()}`,
       buffer: file.buffer,
@@ -695,7 +718,6 @@ export class PostsService {
       isPrivate: true,
     });
 
-    // Update media record
     await this.prisma.postMedia.update({
       where: { postId },
       data: {
@@ -704,7 +726,6 @@ export class PostsService {
       },
     });
 
-    // Update post readiness for activation
     await this.recalcReadyForActivation(postId);
 
     return this.getPostByCreator(creatorId, postId);
@@ -725,7 +746,7 @@ export class PostsService {
                 subscriptions: {
                   where: {
                     userId,
-                    currentPeriodEnd: { gt: new Date() },
+                    isEnded: { equals: false },
                   },
                   include: {
                     plan: {
@@ -742,11 +763,14 @@ export class PostsService {
       },
     });
 
+    if (post.status != 'ACTIVE') {
+      throw new NotFoundException('Post is not found');
+    }
+
     if (!post?.media) {
       return null;
     }
 
-    // Check if user has an active subscription to a plan that includes this category
     const hasSubscription = post.category.creator.subscriptions.some(
       (subscription) =>
         !subscription.isEnded &&
@@ -759,7 +783,7 @@ export class PostsService {
       throw new ForbiddenException('You do not have access to this media');
     }
 
-    const mediaWithUrls: PostMediaResponseDto = {
+    return {
       ...post.media,
       mediaUrl: post.media.mediaKey
         ? await this.storageService.getPresignedUrl(post.media.mediaKey)
@@ -768,34 +792,32 @@ export class PostsService {
         ? await this.storageService.getPresignedUrl(post.media.previewKey)
         : undefined,
     };
-
-    return mediaWithUrls;
   }
 
   async searchPosts(
     userId: number | undefined,
-    dto: SearchPostsDto,
+    dto: SearchPostsUsersDto,
   ): Promise<{ posts: PostResponseDto[]; total: number }> {
-    const { page, limit, categoryId, name, type } = dto;
+    const { page, limit, categoryId, name, type, creatorId } = dto;
     const skip = (page - 1) * limit;
 
-    // 1) Build WHERE clause
     const where: Prisma.PostWhereInput = {
+      category: {
+        creatorId,
+      },
       status: PostStatus.ACTIVE,
       ...(categoryId ? { categoryId } : {}),
       ...(type ? { type } : {}),
       ...(name ? { name: { contains: name, mode: 'insensitive' } } : {}),
     };
 
-    // 2) Count total matches
     const total = await this.prisma.post.count({ where });
 
-    // 3) Fetch raw posts + whether this user has a valid sub for each
     const raws = await this.prisma.post.findMany({
       where,
       skip,
       take: limit,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { updatedAt: 'desc' },
       include: {
         category: {
           include: {
@@ -804,7 +826,7 @@ export class PostsService {
                 subscriptions: {
                   where: {
                     userId: userId ?? 0,
-                    currentPeriodEnd: { gt: new Date() },
+                    isEnded: { equals: false },
                   },
                   select: {
                     plan: {
@@ -824,7 +846,6 @@ export class PostsService {
       },
     });
 
-    // 4) Map → full vs limited DTO
     const posts = await Promise.all(
       raws.map(async (post) => {
         const hasSubscription = post.category.creator.subscriptions.some(
@@ -835,11 +856,9 @@ export class PostsService {
           post.category.isPublic || (!!userId && hasSubscription);
 
         if (userId && hasAccess) {
-          // full DTO for authenticated user with access
           return this.buildFullDto(post);
         }
 
-        // limited DTO for public or unauthorized user
         return this.buildLimitedDto(post);
       }),
     );
@@ -868,17 +887,15 @@ export class PostsService {
       updatedAt: post.updatedAt,
       likesCount: post.likesCount,
       repostsCount: post.repostsCount,
-      // no media URLs, no poll, no images, etc.
+      hasAccess: false,
     };
   }
 
   private async buildFullDto(post: RawPostWithSubs): Promise<PostResponseDto> {
-    // header
     const headerUrl = post.headerKey
       ? await this.storageService.getPresignedUrl(post.headerKey)
       : undefined;
 
-    // images
     const images = await Promise.all(
       post.images.map(async (img) => ({
         id: img.id,
@@ -888,7 +905,6 @@ export class PostsService {
       })),
     );
 
-    // media
     let mediaUrl: string | undefined;
     let previewUrl: string | undefined;
     if (post.media?.mediaKey) {
@@ -900,7 +916,6 @@ export class PostsService {
       );
     }
 
-    // poll
     const poll = post.poll
       ? {
           id: post.poll.id,
@@ -913,7 +928,6 @@ export class PostsService {
         }
       : undefined;
 
-    // comments (only if enabled)
     const comments = post.commentsEnabled
       ? await this.loadComments(post.id)
       : [];
@@ -936,6 +950,7 @@ export class PostsService {
       updatedAt: post.updatedAt,
       likesCount: post.likesCount,
       repostsCount: post.repostsCount,
+      hasAccess: true,
 
       headerKey: post.headerKey,
       headerUrl,
@@ -964,7 +979,7 @@ export class PostsService {
     postId: number,
   ): Promise<boolean> {
     const post = await this.prisma.post.findUnique({
-      where: { id: postId },
+      where: { id: postId, status: 'ACTIVE' },
       include: {
         category: {
           include: {
@@ -973,7 +988,7 @@ export class PostsService {
                 subscriptions: {
                   where: {
                     userId,
-                    currentPeriodEnd: { gt: new Date() },
+                    isEnded: { equals: false },
                   },
                   include: {
                     plan: {
@@ -994,12 +1009,10 @@ export class PostsService {
       throw new NotFoundException('Post not found');
     }
 
-    // Check if category is public
     if (post.category.isPublic) {
       return true;
     }
 
-    // Check if user has an active subscription to a plan that includes this category
     return post.category.creator.subscriptions.some(
       (subscription) =>
         !subscription.isEnded &&
@@ -1009,17 +1022,17 @@ export class PostsService {
     );
   }
 
-  async likePost(userId: number, dto: LikePostDto) {
-    const hasAccess = await this.checkUserHasAccessToPost(userId, dto.postId);
+  async likePost(userId: number, postId: number) {
+    const hasAccess = await this.checkUserHasAccessToPost(userId, postId);
     if (!hasAccess) throw new ForbiddenException();
 
     try {
       await this.prisma.$transaction(async (tx) => {
         await tx.postLike.create({
-          data: { postId: dto.postId, userId },
+          data: { postId: postId, userId },
         });
         await tx.post.update({
-          where: { id: dto.postId },
+          where: { id: postId },
           data: { likesCount: { increment: 1 } },
         });
       });
@@ -1051,33 +1064,31 @@ export class PostsService {
     });
   }
 
-  async repostPost(userId: number, dto: RepostPostDto) {
-    const hasAccess = await this.checkUserHasAccessToPost(userId, dto.postId);
+  async repostPost(userId: number, postId: number) {
+    const hasAccess = await this.checkUserHasAccessToPost(userId, postId);
     if (!hasAccess) {
       throw new ForbiddenException('You do not have access to this post');
     }
 
     await this.prisma.$transaction(async (tx) => {
       await tx.postRepost.create({
-        data: { postId: dto.postId, userId },
+        data: { postId: postId, userId },
       });
       await tx.post.update({
-        where: { id: dto.postId },
+        where: { id: postId },
         data: { repostsCount: { increment: 1 } },
       });
     });
   }
 
   async votePoll(userId: number, dto: VotePollDto) {
-    // 1) Access check
     const hasAccess = await this.checkUserHasAccessToPost(userId, dto.pollId);
     if (!hasAccess) {
       throw new ForbiddenException('You do not have access to this poll');
     }
 
-    // 2) Verify poll exists & is open
     const poll = await this.prisma.poll.findUnique({
-      where: { id: dto.pollId },
+      where: { postId: dto.pollId },
       include: { options: true },
     });
     if (!poll) {
@@ -1087,26 +1098,23 @@ export class PostsService {
       throw new BadRequestException('This poll is closed');
     }
 
-    // 3) Check for existing vote
     const existingVote = await this.prisma.pollVote.findUnique({
       where: {
-        unique_vote_per_poll: { pollId: dto.pollId, userId },
+        unique_vote_per_poll: { pollId: poll.id, userId },
       },
     });
     if (existingVote) {
       throw new ConflictException('You have already voted in this poll');
     }
 
-    // 4) Verify that the option belongs to this poll
     if (!poll.options.some((opt) => opt.id === dto.optionId)) {
       throw new NotFoundException('Poll option not found');
     }
 
-    // 5) Atomic create+increment
     await this.prisma.$transaction(async (tx) => {
       await tx.pollVote.create({
         data: {
-          pollId: dto.pollId,
+          pollId: poll.id,
           optionId: dto.optionId,
           userId,
         },
@@ -1119,13 +1127,16 @@ export class PostsService {
       });
     });
 
-    // 6) (Optional) return updated poll or vote record
-    return { success: true };
+    return this.getPostById(dto.pollId, userId);
   }
 
-  async createComment(userId: number, createCommentDto: CreateCommentDto) {
+  async createComment(
+    userId: number,
+    createCommentDto: CreateCommentDto,
+    postId: number,
+  ) {
     const post = await this.prisma.post.findUnique({
-      where: { id: createCommentDto.postId },
+      where: { id: postId },
       include: {
         category: true,
       },
@@ -1139,13 +1150,11 @@ export class PostsService {
       throw new BadRequestException('Comments are disabled for this post');
     }
 
-    // Check if user has access to the post
     const hasAccess = await this.checkUserHasAccessToPost(userId, post.id);
     if (!hasAccess) {
       throw new ForbiddenException('You do not have access to this post');
     }
 
-    // If this is a reply, verify the parent comment exists and belongs to the same post
     if (createCommentDto.parentId) {
       const parentComment = await this.prisma.comment.findUnique({
         where: { id: createCommentDto.parentId },
@@ -1159,7 +1168,7 @@ export class PostsService {
     const comment = await this.prisma.comment.create({
       data: {
         content: createCommentDto.content,
-        postId: createCommentDto.postId,
+        postId: postId,
         userId,
         parentId: createCommentDto.parentId,
       },
@@ -1251,57 +1260,6 @@ export class PostsService {
     });
   }
 
-  async getPostComments(userId: number, postId: number) {
-    const post = await this.prisma.post.findUnique({
-      where: { id: postId },
-      include: {
-        category: true,
-      },
-    });
-
-    if (!post) {
-      throw new NotFoundException('Post not found');
-    }
-
-    // Check if user has access to the post
-    const hasAccess = await this.checkUserHasAccessToPost(userId, post.id);
-    if (!hasAccess) {
-      throw new ForbiddenException('You do not have access to this post');
-    }
-
-    const comments = await this.prisma.comment.findMany({
-      where: {
-        postId,
-        parentId: null, // Only get top-level comments
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            userName: true,
-            avatarUrl: true,
-          },
-        },
-        replies: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                userName: true,
-                avatarUrl: true,
-              },
-            },
-          },
-        },
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
-
-    return comments;
-  }
-
   async searchCreatorPosts(
     creatorId: number,
     dto: SearchPostsDto,
@@ -1309,19 +1267,15 @@ export class PostsService {
     const { page, limit, categoryId, name, type } = dto;
     const skip = (page - 1) * limit;
 
-    // 1) Build WHERE clause
     const where: Prisma.PostWhereInput = {
-      status: PostStatus.ACTIVE,
       category: { creatorId },
       ...(categoryId ? { categoryId } : {}),
       ...(type ? { type } : {}),
       ...(name ? { name: { contains: name, mode: 'insensitive' } } : {}),
     };
 
-    // 2) Total count
     const total = await this.prisma.post.count({ where });
 
-    // 3) Fetch the raws (no subscriptions needed)
     const raws = await this.prisma.post.findMany({
       where,
       skip,
@@ -1335,7 +1289,6 @@ export class PostsService {
       },
     });
 
-    // 4) Map → full DTO for each
     const posts = await Promise.all(
       raws.map((raw) => this.buildFullDto(raw as any)),
     );
@@ -1347,7 +1300,6 @@ export class PostsService {
     creatorId: number,
     postId: number,
   ): Promise<PostResponseDto> {
-    // 1) Fetch raw post, ensuring the category belongs to this creator
     const raw = await this.prisma.post.findFirst({
       where: {
         id: postId,
@@ -1367,7 +1319,7 @@ export class PostsService {
               },
             },
           },
-          orderBy: { createdAt: 'desc' },
+          orderBy: { updatedAt: 'desc' },
         },
       },
     });
@@ -1376,7 +1328,6 @@ export class PostsService {
       throw new NotFoundException('Post not found');
     }
 
-    // 2) Build presigned URLs
     const headerUrl = raw.headerKey
       ? await this.storageService.getPresignedUrl(raw.headerKey)
       : undefined;
@@ -1398,7 +1349,6 @@ export class PostsService {
       ? await this.storageService.getPresignedUrl(raw.media.previewKey)
       : undefined;
 
-    // 3) Map to an “owner” DTO
     return {
       id: raw.id,
       type: raw.type,
@@ -1492,7 +1442,6 @@ export class PostsService {
         ready = !!post.name && !!post.description;
         break;
       case PostType.POLL:
-        // for polls we require at least one header or maybe options already exist
         ready = !!post.name && post.poll?.options?.length > 1;
         break;
       case PostType.AUDIO:
@@ -1500,9 +1449,9 @@ export class PostsService {
         break;
       case PostType.VIDEO:
         ready =
+          !!post.name &&
           post.media?.uploaded === true &&
-          typeof !!post.name &&
-          post.media.previewKey === 'string';
+          typeof post.media.previewKey === 'string';
         break;
     }
 

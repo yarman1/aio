@@ -27,12 +27,10 @@ export class PaymentController {
     private readonly configService: ConfigService,
     @Inject('StripeClient') private readonly stripe: Stripe,
   ) {
-    this.platformWebhookSecret = this.configService.get<string>(
-      'STRIPE_WEBHOOK_SECRET_PLATFORM',
-    );
-    this.connectWebhookSecret = this.configService.get<string>(
-      'STRIPE_WEBHOOK_SECRET_CONNECT',
-    );
+    this.platformWebhookSecret =
+      this.configService.get<string>('STRIPE_WEBHOOK_KEY');
+    this.connectWebhookSecret =
+      this.configService.get<string>('STRIPE_WEBHOOK_KEY');
   }
 
   @Public()
@@ -75,6 +73,7 @@ export class PaymentController {
         this.connectWebhookSecret,
       );
     } catch (e) {
+      console.log(e);
       return res
         .status(HttpStatus.BAD_REQUEST)
         .send(`Webhook Error: ${(e as Error).message}`);

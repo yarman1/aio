@@ -8,9 +8,12 @@ import {
   HttpStatus,
   Param,
   ParseIntPipe,
+  Patch,
   Post,
   Put,
   Query,
+  Redirect,
+  Res,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
@@ -24,12 +27,14 @@ import { CreatorUsernameDto } from './dto/creator-username.dto';
 import { plainToInstance } from 'class-transformer';
 import { AccountManagementUrlDto } from './dto/account-management-url.dto';
 import { ReadCreatorDto } from './dto/read-creator.dto';
-import { ReadPublicCreatorDto } from './dto/read-public-creator.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { GetCreatorIdPipe } from '../auth/pipes/get-creator-id.pipe';
 import { IsOwnerDto } from './dto/is-owner.dto';
 import { SearchCreatorsDto } from './dto/search-creators.dto';
+import { Response } from 'express';
+import { ReadCreatorPublicDto } from './dto/read-creator-public.dto';
+import { CreatorDescriptionDto } from './dto/creator-description.dto';
 
 @Controller('creators')
 export class CreatorsController {
@@ -54,7 +59,7 @@ export class CreatorsController {
     const res = this.creatorsService.getCreatorStripeOnboardingLink(
       clientType,
       payload.sub,
-      dto.userName,
+      dto.creatorUsername,
     );
     return plainToInstance(AccountManagementUrlDto, res);
   }
@@ -104,19 +109,60 @@ export class CreatorsController {
       payload.sub,
       creatorId,
     );
-    return { isOwner };
+    return plainToInstance(IsOwnerDto, { isOwner });
   }
 
-  @Public()
-  @Get('public/:userName')
+  @Get('public/:creatorId')
   @HttpCode(HttpStatus.OK)
   @ApiResponse({
     status: HttpStatus.NOT_FOUND,
     description: 'This creator does not exist',
   })
-  @ApiResponse({ status: HttpStatus.OK, type: ReadCreatorDto })
-  async readPublicCreator(@Param() dto: CreatorUsernameDto) {
-    const res = this.creatorsService.readCreatorPublic(dto.userName);
+  @ApiResponse({ status: HttpStatus.OK, type: ReadCreatorPublicDto })
+  async readPublicCreator(
+    @Param('creatorId', ParseIntPipe) creatorId: number,
+    @User() user: JwtRtPayload,
+  ) {
+    const res = this.creatorsService.readCreatorPublic(creatorId, user.sub);
+    return plainToInstance(ReadCreatorPublicDto, res);
+  }
+
+  @Patch('/creator-username')
+  @HttpCode(HttpStatus.OK)
+  @ApiResponse({
+    status: HttpStatus.OK,
+    type: ReadCreatorDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: 'This creator does not exist',
+  })
+  async updateCreatorUsername(
+    @Body() dto: CreatorUsernameDto,
+    @User() user: JwtRtPayload,
+  ) {
+    const res = await this.creatorsService.updateCreatorUsername(user.sub, dto);
+    return plainToInstance(ReadCreatorDto, res);
+  }
+
+  @Patch('/description')
+  @HttpCode(HttpStatus.OK)
+  @ApiResponse({
+    status: HttpStatus.OK,
+    type: ReadCreatorDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: 'This creator does not exist',
+  })
+  async updateCreatorDescription(
+    @Body() dto: CreatorDescriptionDto,
+    @User() user: JwtRtPayload,
+  ) {
+    const res = await this.creatorsService.updateCreatorDescription(
+      user.sub,
+      dto,
+    );
     return plainToInstance(ReadCreatorDto, res);
   }
 
@@ -156,7 +202,11 @@ export class CreatorsController {
     @Param('id', ParseIntPipe) creatorId: number,
     @User() payload: JwtRtPayload,
   ) {
-    return this.creatorsService.followCreator(payload.sub, creatorId);
+    const res = await this.creatorsService.followCreator(
+      payload.sub,
+      creatorId,
+    );
+    return plainToInstance(ReadCreatorPublicDto, res);
   }
 
   @Delete(':id/follow')
@@ -165,8 +215,11 @@ export class CreatorsController {
     @Param('id', ParseIntPipe) creatorId: number,
     @User() payload: JwtRtPayload,
   ) {
-    await this.creatorsService.unfollowCreator(payload.sub, creatorId);
-    return { success: true };
+    const res = await this.creatorsService.unfollowCreator(
+      payload.sub,
+      creatorId,
+    );
+    return plainToInstance(ReadCreatorPublicDto, res);
   }
 
   @Get('followed')
@@ -175,28 +228,39 @@ export class CreatorsController {
     const creators = await this.creatorsService.getFollowedCreators(
       payload.sub,
     );
-    return creators;
+    return plainToInstance(ReadCreatorPublicDto, creators);
   }
 
-  /** GET /creators/:id/is-followed */
-  @Get(':id/is-followed')
-  @HttpCode(HttpStatus.OK)
-  async isFollowed(
-    @Param('id', ParseIntPipe) creatorId: number,
-    @User() payload: JwtRtPayload,
-  ) {
-    const isFollowed = await this.creatorsService.isFollowing(
-      payload.sub,
-      creatorId,
-    );
-    return { isFollowed };
-  }
-
-  /** Public search: GET /creators/search?name=foo&page=1&limit=10 */
-  @Public()
   @Get('search')
   @HttpCode(HttpStatus.OK)
-  async searchCreators(@Query() dto: SearchCreatorsDto) {
-    return this.creatorsService.searchCreators(dto);
+  async searchCreators(@Query() dto: SearchCreatorsDto, @Res() res: Response) {
+    const result = await this.creatorsService.searchCreators(dto);
+    res.send(result);
+  }
+
+  @Get('is-exist')
+  async isExist(@User() payload: JwtRtPayload, @Res() res: Response) {
+    const result = await this.creatorsService.userHasCreator(payload.sub);
+    return res.send({
+      result: result,
+    });
+  }
+
+  @Public()
+  @Get('subscription-mobile/:creatorId')
+  handleMobileSubscription(
+    @Param('creatorId') creatorId: string,
+    @Res() res: Response,
+  ) {
+    res.redirect(
+      `exp://192.168.0.119:8081/--/subscriptions/success/${creatorId}`,
+    );
+  }
+
+  @Public()
+  @Get('return-mobile')
+  @Redirect(`exp://192.168.0.119:8081/--/creator/dashboard/return`, 302)
+  handleStripeReturning() {
+    return;
   }
 }

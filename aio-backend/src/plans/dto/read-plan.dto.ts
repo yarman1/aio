@@ -19,7 +19,7 @@ export class ReadPlanDto {
   description: string;
 
   @Expose()
-  price: number;
+  price: string;
 
   @Expose()
   isArchived: boolean;

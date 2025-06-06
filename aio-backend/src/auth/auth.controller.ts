@@ -51,7 +51,10 @@ export class AuthController {
   @Post('local/sign-in')
   @HttpCode(HttpStatus.OK)
   @ApiResponse({ type: AtResponseDto })
-  async login(@Body() dto: LoginDto, @Res() res: Response) {
+  async login(
+    @Body() dto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const tokens = await this.authService.login(dto);
     this.authService.setAuthCookies(res, tokens);
     return plainToInstance(AtResponseDto, { accessToken: tokens.accessToken });
@@ -60,9 +63,9 @@ export class AuthController {
   @Public()
   @Post('local/mobile/sign-in')
   @HttpCode(HttpStatus.OK)
-  @ApiResponse({ type: AtResponseDto })
+  @ApiResponse({ type: TokenResponseMobileDto })
   async loginMobile(@Body() dto: LoginDto) {
-    const tokens: TokenResponseMobileDto = await this.authService.login(dto);
+    const tokens = await this.authService.login(dto);
     return plainToInstance(TokenResponseMobileDto, tokens);
   }
 
@@ -70,7 +73,10 @@ export class AuthController {
   @Post('local/sign-up')
   @HttpCode(HttpStatus.CREATED)
   @ApiResponse({ type: AtResponseDto })
-  async register(@Body() dto: RegisterDto, @Res() res: Response) {
+  async register(
+    @Body() dto: RegisterDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const tokens = await this.authService.register(dto);
     this.authService.setAuthCookies(res, tokens);
     return plainToInstance(AtResponseDto, { accessToken: tokens.accessToken });
@@ -79,7 +85,6 @@ export class AuthController {
   @Public()
   @Get('/google/auth/url')
   async getGoogleAuthUrl(@Req() req: Request): Promise<GoogleAuthUrlDto> {
-    // revise errors
     if (!req?.headers?.['x-client-type']) {
       throw new BadRequestException('Client type is not defined');
     }
@@ -102,7 +107,7 @@ export class AuthController {
   async googleCallback(
     @Query('code') code: string,
     @Query('state') clientType: string,
-    @Res() res: Response,
+    @Res({ passthrough: true }) res: Response,
   ) {
     const tokens = await this.authService.googleOauthCallback(code);
 
@@ -166,6 +171,7 @@ export class AuthController {
     res.json({ accessToken: tokens.accessToken });
   }
 
+  @Public()
   @UseGuards(RtGuard)
   @Put('password')
   @ApiResponse({
@@ -182,18 +188,20 @@ export class AuthController {
   })
   async updatePassword(
     @Body() dto: UpdatePasswordDto,
-    @User('sub') userId: number,
+    @User() user: JwtRtPayload,
     @Res() res: Response,
     @Req() req: Request,
   ) {
     const isWebRequest = req.headers?.['x-client-type'] === 'web';
     if (isWebRequest) {
-      await this.authService.updatePassword(dto, userId, res);
+      await this.authService.updatePassword(dto, user.sub);
+      res.status(HttpStatus.NO_CONTENT).send();
+      return;
     } else {
-      await this.authService.updatePassword(dto, userId);
+      const tokens = await this.authService.updatePassword(dto, user.sub, res);
+      res.send(tokens);
+      return;
     }
-
-    res.status(HttpStatus.NO_CONTENT).send();
   }
 
   @Public()
@@ -211,6 +219,27 @@ export class AuthController {
   ) {
     try {
       await this.authService.requestRecovery(dto.email);
+      res.status(HttpStatus.NO_CONTENT).send();
+    } catch (error) {
+      res.status(HttpStatus.TOO_MANY_REQUESTS).send();
+    }
+  }
+
+  @Public()
+  @UseInterceptors(BlockCheckInterceptor)
+  @UseGuards(RecoveryThrottlerGuard)
+  @Throttle({
+    short: { limit: 1, ttl: ms('15m') },
+    medium: { limit: 5, ttl: ms('2h') },
+  })
+  @Post('recovery-mobile')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async requestRecoveryMobile(
+    @Body() dto: PasswordRecoveryDto,
+    @Res() res: Response,
+  ) {
+    try {
+      await this.authService.requestRecoveryMobile(dto.email);
       res.status(HttpStatus.NO_CONTENT).send();
     } catch (error) {
       res.status(HttpStatus.TOO_MANY_REQUESTS).send();
@@ -247,7 +276,6 @@ export class AuthController {
     await this.authService.resetPassword(dto);
   }
 
-  // update delete user (stripe things and maybe deactivation)
   @UseGuards(RtGuard)
   @Delete('user')
   @HttpCode(HttpStatus.NO_CONTENT)

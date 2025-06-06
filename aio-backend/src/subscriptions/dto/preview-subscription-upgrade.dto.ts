@@ -3,9 +3,6 @@ import { PreviewInvoiceLineDto } from './preview-invoice-line.dto';
 
 export class PreviewSubscriptionUpgradeDto {
   @Expose()
-  upcomingInvoiceId: string;
-
-  @Expose()
   amountDue: number;
 
   @Expose()

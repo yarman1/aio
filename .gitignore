@@ -4,6 +4,10 @@ sample/**/package-lock.json
 # dependencies
 node_modules/
 
+dist/
+
+generated/
+
 # IDE
 /.idea
 /.awcache

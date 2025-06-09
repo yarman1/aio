@@ -1,0 +1,399 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+  output        = "../src/generated/prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  user
+  admin
+}
+
+model User {
+  id               Int            @id() @default(autoincrement())
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  email            String         @unique
+  userName         String
+  passwordHash     String
+  isEmailConfirmed Boolean        @default(false)
+  customerId       String         @unique
+  creator          Creator?
+  subscriptions    Subscription[]
+  postViews        PostView[]
+  postLikes        PostLike[]
+  postReposts      PostRepost[]
+  pollVotes        PollVote[]
+  comments         Comment[]
+
+  role Role @default(user)
+
+  avatarKey    String?
+  avatarUrl    String?
+  follows      Follow[]
+  mediaPlays   MediaPlay[]
+  followEvents FollowEvent[]
+}
+
+model Creator {
+  id                      Int               @id() @default(autoincrement())
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @default(now())
+  userId                  Int               @unique
+  user                    User              @relation(fields: [userId], references: [id])
+  connectAccountId        String            @unique
+  creatorUsername         String
+  description             String            @default("")
+  isStripeAccountVerified Boolean           @default(false)
+  plans                   Plan[]
+  creatorCategories       CreatorCategory[]
+  externalBenefits        ExternalBenefit[]
+  subscriptions           Subscription[]
+
+  avatarKey             String?
+  avatarUrl             String?
+  follows               Follow[]
+  followEvents          FollowEvent[]
+  creatorApiCredentials CreatorApiCredential[]
+}
+
+enum Interval {
+  day
+  week
+  month
+  year
+}
+
+model Plan {
+  id                Int               @id() @default(autoincrement())
+  productId         String            @unique
+  name              String
+  createdAt         DateTime
+  updatedAt         DateTime          @default(now())
+  description       String
+  priceId           String            @unique
+  price             Decimal
+  interval          Interval
+  intervalCount     Int
+  isArchived        Boolean           @default(false)
+  creator           Creator           @relation(fields: [creatorId], references: [id])
+  creatorId         Int
+  creatorCategories CreatorCategory[]
+  externalBenefits  ExternalBenefit[]
+  subscriptions     Subscription[]
+  planStats         PlanStats[]
+}
+
+model CreatorCategory {
+  id                   Int                    @id() @default(autoincrement())
+  creatorId            Int
+  name                 String
+  isPublic             Boolean                @default(false)
+  creator              Creator                @relation(fields: [creatorId], references: [id])
+  plans                Plan[]
+  posts                Post[]
+  creatorCategoryStats CreatorCategoryStats[]
+}
+
+model ExternalBenefit {
+  id        Int     @id() @default(autoincrement())
+  creatorId Int
+  name      String
+  creator   Creator @relation(fields: [creatorId], references: [id])
+  plans     Plan[]
+}
+
+model Subscription {
+  id                   Int                 @id() @default(autoincrement())
+  subscriptionStripeId String              @unique
+  createdAt            DateTime
+  updatedAt            DateTime            @default(now())
+  currentPeriodEnd     DateTime
+  isCancelled          Boolean
+  isEnded              Boolean
+  cancellationComment  String?
+  cancellationFeedback String?
+  cancelationReason    String?
+  planId               Int
+  userId               Int
+  creatorId            Int
+  plan                 Plan                @relation(fields: [planId], references: [id])
+  user                 User                @relation(fields: [userId], references: [id])
+  creator              Creator             @relation(fields: [creatorId], references: [id])
+  subscriptionEvents   SubscriptionEvent[]
+}
+
+model PostView {
+  id       Int      @id() @default(autoincrement())
+  postId   Int
+  post     Post     @relation(fields: [postId], references: [id])
+  userId   Int
+  user     User     @relation(fields: [userId], references: [id])
+  viewDate DateTime
+
+  @@unique([postId, userId, viewDate], name: "unique_user_view_per_day")
+}
+
+enum PostType {
+  TEXT
+  VIDEO
+  AUDIO
+  POLL
+}
+
+enum PostStatus {
+  DRAFT
+  ACTIVE
+}
+
+model Post {
+  id                   Int             @id @default(autoincrement())
+  type                 PostType
+  name                 String
+  description          String?
+  headerKey            String?
+  category             CreatorCategory @relation(fields: [categoryId], references: [id])
+  categoryId           Int
+  status               PostStatus      @default(DRAFT)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  commentsEnabled      Boolean         @default(true)
+  isReadyForActivation Boolean         @default(false)
+  comments             Comment[]
+
+  likesCount   Int @default(0)
+  repostsCount Int @default(0)
+
+  images     PostImage[]
+  media      PostMedia?
+  poll       Poll?
+  views      PostView[]
+  likes      PostLike[]
+  reposts    PostRepost[]
+  mediaPlays MediaPlay[]
+}
+
+model PostImage {
+  id     Int    @id @default(autoincrement())
+  post   Post   @relation(fields: [postId], references: [id])
+  postId Int
+  key    String
+  order  Int
+
+  @@unique([postId, order])
+}
+
+enum MediaType {
+  VIDEO
+  AUDIO
+}
+
+model PostMedia {
+  id         Int     @id @default(autoincrement())
+  post       Post    @relation(fields: [postId], references: [id])
+  postId     Int     @unique
+  mediaKey   String?
+  previewKey String?
+  uploaded   Boolean @default(false)
+}
+
+model Poll {
+  id        Int          @id @default(autoincrement())
+  post      Post         @relation(fields: [postId], references: [id])
+  postId    Int          @unique
+  isClosed  Boolean      @default(false)
+  options   PollOption[]
+  pollVotes PollVote[]
+}
+
+model PollOption {
+  id        Int        @id @default(autoincrement())
+  poll      Poll       @relation(fields: [pollId], references: [id])
+  pollId    Int
+  text      String
+  voteCount Int        @default(0)
+  pollVotes PollVote[]
+}
+
+model Comment {
+  id        Int      @id @default(autoincrement())
+  content   String
+  postId    Int
+  userId    Int
+  parentId  Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  post          Post           @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user          User           @relation(fields: [userId], references: [id])
+  parent        Comment?       @relation("CommentToComment", fields: [parentId], references: [id], onDelete: Cascade)
+  replies       Comment[]      @relation("CommentToComment")
+  commentEvents CommentEvent[]
+
+  @@index([postId])
+  @@index([userId])
+  @@index([parentId])
+}
+
+model PostLike {
+  id        Int      @id @default(autoincrement())
+  post      Post     @relation(fields: [postId], references: [id])
+  postId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId], name: "unique_like_per_user")
+}
+
+model PostRepost {
+  id        Int      @id @default(autoincrement())
+  post      Post     @relation(fields: [postId], references: [id])
+  postId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+  createdAt DateTime @default(now())
+}
+
+model PollVote {
+  id        Int        @id @default(autoincrement())
+  poll      Poll       @relation(fields: [pollId], references: [id])
+  pollId    Int
+  option    PollOption @relation(fields: [optionId], references: [id])
+  optionId  Int
+  user      User       @relation(fields: [userId], references: [id])
+  userId    Int
+  createdAt DateTime   @default(now())
+
+  @@unique([pollId, userId], name: "unique_vote_per_poll")
+}
+
+model Follow {
+  id        Int      @id @default(autoincrement())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+  creator   Creator  @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  creatorId Int
+  createdAt DateTime @default(now())
+
+  @@unique([userId, creatorId])
+}
+
+model CommentEvent {
+  id        Int              @id @default(autoincrement())
+  commentId Int
+  type      CommentEventType
+  createdAt DateTime         @default(now())
+
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+}
+
+enum CommentEventType {
+  CREATED
+  UPDATED
+  DELETED
+}
+
+model MediaPlay {
+  id        Int      @id @default(autoincrement())
+  postId    Int
+  userId    Int
+  createdAt DateTime @default(now())
+  duration  Int?
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([userId])
+}
+
+enum FollowEventType {
+  FOLLOWED
+  UNFOLLOWED
+}
+
+model FollowEvent {
+  id        Int             @id @default(autoincrement())
+  userId    Int
+  creatorId Int
+  type      FollowEventType
+  createdAt DateTime        @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  creator Creator @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([creatorId])
+}
+
+enum SubscriptionEventType {
+  CREATED
+  RENEWED
+  CANCELED
+  EXPIRED
+}
+
+model SubscriptionEvent {
+  id             Int                   @id @default(autoincrement())
+  subscriptionId Int
+  type           SubscriptionEventType
+  createdAt      DateTime              @default(now())
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+  @@index([type])
+}
+
+model CreatorCategoryStats {
+  id                Int      @id @default(autoincrement())
+  creatorCategoryId Int
+  date              DateTime
+  views             Int      @default(0)
+  likes             Int      @default(0)
+  reposts           Int      @default(0)
+  comments          Int      @default(0)
+  votes             Int      @default(0)
+  plays             Int      @default(0)
+
+  categoryName String
+
+  creatorCategory CreatorCategory @relation(fields: [creatorCategoryId], references: [id])
+
+  @@unique([creatorCategoryId, date])
+}
+
+model PlanStats {
+  id           Int      @id @default(autoincrement())
+  planId       Int
+  date         DateTime
+  subsCreated  Int      @default(0)
+  subsRenewed  Int      @default(0)
+  subsCanceled Int      @default(0)
+  subsExpired  Int      @default(0)
+
+  plan Plan @relation(fields: [planId], references: [id])
+
+  @@unique([planId, date])
+  @@index([planId])
+}
+
+model CreatorApiCredential {
+  id           Int       @id @default(autoincrement())
+  creatorId    Int
+  clientId     String    @unique @default(cuid())
+  clientSecret String
+  createdAt    DateTime  @default(now())
+  revokedAt    DateTime?
+  isActive     Boolean   @default(true)
+
+  creator Creator @relation(fields: [creatorId], references: [id])
+
+  @@index([creatorId])
+}

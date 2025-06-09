@@ -1,14 +1,11 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
-  Get,
   HttpCode,
   HttpStatus,
   Post,
   Put,
-  Query,
   Req,
   Res,
   UseGuards,
@@ -36,16 +33,11 @@ import { ConfirmationThrottleGuard } from './guards/confirmation-throttle.guard'
 import { ConfirmEmailDto } from './dto/confirm-email.dto';
 import { TokenResponseMobileDto } from './dto/mobile/token-response.mobile.dto';
 import { plainToInstance } from 'class-transformer';
-import { GoogleAuthUrlDto } from './dto/google-auth-url.dto';
-import { ConfigService } from '@nestjs/config';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(
-    private readonly authService: AuthService,
-    private readonly config: ConfigService,
-  ) {}
+  constructor(private readonly authService: AuthService) {}
 
   @Public()
   @Post('local/sign-in')
@@ -80,48 +72,6 @@ export class AuthController {
     const tokens = await this.authService.register(dto);
     this.authService.setAuthCookies(res, tokens);
     return plainToInstance(AtResponseDto, { accessToken: tokens.accessToken });
-  }
-
-  @Public()
-  @Get('/google/auth/url')
-  async getGoogleAuthUrl(@Req() req: Request): Promise<GoogleAuthUrlDto> {
-    if (!req?.headers?.['x-client-type']) {
-      throw new BadRequestException('Client type is not defined');
-    }
-    if (
-      req.headers['x-client-type'] !== 'web' ||
-      req.headers['x-client-type'] !== 'mobile'
-    ) {
-      throw new BadRequestException('Client type is not defined');
-    }
-    const clientType = req.headers['x-client-type'];
-    const url = this.authService.generateGoogleAuthUrl(clientType);
-    const res = {
-      authUrl: url,
-    };
-    return plainToInstance(GoogleAuthUrlDto, res);
-  }
-
-  @Public()
-  @Get('/google/callback')
-  async googleCallback(
-    @Query('code') code: string,
-    @Query('state') clientType: string,
-    @Res({ passthrough: true }) res: Response,
-  ) {
-    const tokens = await this.authService.googleOauthCallback(code);
-
-    if (clientType === 'web') {
-      this.authService.setAuthCookies(res, tokens);
-      res.redirect(this.config.get<string>('GOOGLE_OAUTH_REDIRECT_WEB'));
-    } else {
-      const redirectBase = this.config.get<string>(
-        'GOOGLE_OAUTH_REDIRECT_MOBILE',
-      );
-      res.redirect(
-        `${redirectBase}?access=${tokens.accessToken}&refresh=${tokens.refreshToken}&device=${tokens.deviceId}`,
-      );
-    }
   }
 
   @Public()

@@ -29,9 +29,6 @@ import { promisify } from 'util';
 import Stripe from 'stripe';
 import { ConfirmEmailDto } from './dto/confirm-email.dto';
 import { PrismaService } from '../prisma/prisma.service';
-import { Credentials, OAuth2Client } from 'google-auth-library';
-import { google } from 'googleapis';
-import axios from 'axios';
 
 const scrypt = promisify(crypto.scrypt);
 
@@ -57,38 +54,6 @@ export class AuthService {
     private readonly redisService: RedisService,
     @Inject('StripeClient') private readonly stripeClient: Stripe,
   ) {}
-
-  createOAuth2GoogleClient(): OAuth2Client {
-    return new OAuth2Client(
-      this.config.get<string>('GOOGLE_CLIENT_ID'),
-      this.config.get<string>('GOOGLE_CLIENT_SECRET'),
-      this.config.get<string>('GOOGLE_REDIRECT_URI'),
-    );
-  }
-
-  generateGoogleAuthUrl(clientType: string): string {
-    const oauth2Client = this.createOAuth2GoogleClient();
-    const scopes = [
-      'https://www.googleapis.com/auth/userinfo.email',
-      'https://www.googleapis.com/auth/userinfo.profile',
-    ];
-    return oauth2Client.generateAuthUrl({
-      scope: scopes,
-      state: clientType,
-    });
-  }
-
-  async getGoogleUserTokens(code: string) {
-    const oauth2Client = this.createOAuth2GoogleClient();
-    const { tokens } = await oauth2Client.getToken(code);
-    return tokens;
-  }
-
-  async getUserClient(tokens: Credentials) {
-    const oauth2Client = this.createOAuth2GoogleClient();
-    oauth2Client.setCredentials(tokens);
-    return oauth2Client;
-  }
 
   async register(dto: RegisterDto): Promise<Tokens> {
     const user = await this.usersService.findUserByEmail(dto.email);
@@ -204,71 +169,6 @@ export class AuthService {
     }
   }
 
-  async googleOauthCallback(code: string) {
-    const googleTokens = await this.getGoogleUserTokens(code);
-    const client = await this.getUserClient(googleTokens);
-    const oauth2 = google.oauth2({ auth: client, version: 'v2' });
-    const { data } = await oauth2.userinfo.get();
-    const { email, name, picture } = data;
-
-    const user = await this.usersService.findUserByEmail(email);
-    let userId: number;
-    if (user) {
-      if (user.passwordHash !== 'GOOGLE_USER') {
-        throw new ForbiddenException('Login with password is required');
-      }
-      userId = user.id;
-    } else {
-      let customer = null;
-      try {
-        customer = await this.stripeClient.customers.create({
-          name: name,
-          email: email,
-        });
-      } catch (error) {
-        this.logger.error('Stripe customer cannot be created');
-        throw new InternalServerErrorException('Internal server error');
-      }
-
-      const newUser = await this.usersService.create({
-        email,
-        userName: name,
-        isEmailConfirmed: true,
-        passwordHash: 'GOOGLE_USER',
-        customerId: customer.id,
-      });
-
-      if (picture) {
-        try {
-          const resp = await axios.get(picture, {
-            responseType: 'arraybuffer',
-          });
-          const buffer = Buffer.from(resp.data, 'binary');
-          const contentType = resp.headers['content-type'] || 'image/jpeg';
-
-          const fileExt = picture.split('.').pop()!.split('?')[0] || 'jpg';
-          const fakeFile = {
-            originalname: `google-avatar.${fileExt}`,
-            mimetype: contentType,
-            size: buffer.length,
-            buffer,
-          } as Express.Multer.File;
-
-          newUser.avatarUrl = await this.usersService.setAvatar(
-            newUser.id,
-            fakeFile,
-          );
-        } catch (err) {
-          this.logger.error('Could not import Google avatar', err);
-        }
-      }
-
-      userId = newUser.id;
-    }
-
-    return await this.getTokens(userId, Role.User);
-  }
-
   async requestRecovery(email: string) {
     const user = await this.usersService.findUserByEmail(email);
     if (!user) {
@@ -314,12 +214,9 @@ export class AuthService {
       { userId },
       { removeOnFail: true },
     );
-    console.log('aerfghjukhjkafghj');
     await job.finished();
-    console.log('aerfghjukhjkafghj');
     const token = this.generateShortToken();
     const key = `${userId}-confirmation-token`;
-    console.log('aerfghjukhjkafghj');
     await this.redisService.setKey(key, token, ms('15m'));
     await this.mailService.sendConfirmationEmail(user.email, token);
   }

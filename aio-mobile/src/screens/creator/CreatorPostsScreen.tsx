@@ -109,7 +109,12 @@ export default function CreatorPostsScreen() {
     >
       <View style={{ flex: 1 }}>
         <Text style={styles.postTitle}>{item.name}</Text>
-        <Text style={styles.postDesc}>{item.description}</Text>
+        <Text style={styles.postDesc}>
+          {item.description
+            .replace(/<[^>]+>/g, '') // remove HTML tags
+            .slice(0, 100) +
+            (item.description.replace(/<[^>]+>/g, '').length > 100 ? '…' : '')}
+        </Text>
         <View style={styles.meta}>
           <Text style={styles.category}>{item.category.name}</Text>
           <Text style={styles.type}>{item.type}</Text>

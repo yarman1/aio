@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
 import { RedisModule } from './redis/redis.module';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
@@ -50,7 +49,6 @@ import { CredentialsModule } from './credentials/credentials.module';
     RecommendationsModule,
     CredentialsModule,
   ],
-  controllers: [AppController],
   providers: [
     {
       provide: APP_GUARD,

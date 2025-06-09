@@ -17,9 +17,7 @@ export default function EmailConfirmationBanner() {
     >();
   return (
     <View style={styles.banner}>
-      <Text style={styles.text}>
-        Your email isn’t confirmed yet. Please check your inbox.
-      </Text>
+      <Text style={styles.text}>Your email isn’t confirmed yet.</Text>
       <TouchableOpacity onPress={() => navigation.navigate('ConfirmEmail')}>
         <Text style={styles.link}>Confirm email</Text>
       </TouchableOpacity>

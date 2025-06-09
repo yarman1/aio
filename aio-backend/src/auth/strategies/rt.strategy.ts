@@ -13,8 +13,8 @@ import { JwtPayload } from '../types';
 @Injectable()
 export class RtStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
   constructor(
-    private config: ConfigService,
-    private usersService: UsersService,
+    private readonly config: ConfigService,
+    private readonly usersService: UsersService,
   ) {
     super({
       jwtFromRequest: (req: Request) => {

@@ -255,7 +255,21 @@ export default function PostManagementDetailScreen() {
         refetchPost();
       }
     } catch (err: any) {
-      Alert.alert('Error', err.data?.message || 'Could not update post.');
+      const apiError = err.data?.message;
+      let displayMsg: string;
+
+      if (Array.isArray(apiError)) {
+        const uniqueMsgs = apiError.filter(
+          (v, i, a) => v && a.indexOf(v) === i,
+        );
+        displayMsg = uniqueMsgs.join('\n');
+      } else if (typeof apiError === 'string') {
+        displayMsg = apiError;
+      } else {
+        displayMsg = 'Could not update post.';
+      }
+
+      Alert.alert('Error', displayMsg);
     }
   };
 
@@ -976,9 +990,7 @@ export default function PostManagementDetailScreen() {
                 postId,
                 commentsEnabled: value,
               }).unwrap();
-              if (isMountedRef.current) {
-                refetchPost();
-              }
+              refetchPost();
             }}
           />
         </View>

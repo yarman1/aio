@@ -32,7 +32,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Credentials, OAuth2Client } from 'google-auth-library';
 import { google } from 'googleapis';
 import axios from 'axios';
-import { StorageService } from '../storage/storage.service';
 
 const scrypt = promisify(crypto.scrypt);
 
@@ -47,16 +46,16 @@ export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
   constructor(
-    private config: ConfigService,
-    private usersService: UsersService,
-    private jwtService: JwtService,
-    private mailService: MailService,
-    private prismaService: PrismaService,
-    private storage: StorageService,
-    @InjectQueue('recovery-queue') private recoveryQueue: Queue,
-    @InjectQueue('confirmation-queue') private confirmationQueue: Queue,
-    private redisService: RedisService,
-    @Inject('StripeClient') private stripeClient: Stripe,
+    private readonly config: ConfigService,
+    private readonly usersService: UsersService,
+    private readonly jwtService: JwtService,
+    private readonly mailService: MailService,
+    private readonly prismaService: PrismaService,
+    @InjectQueue('recovery-queue') private readonly recoveryQueue: Queue,
+    @InjectQueue('confirmation-queue')
+    private readonly confirmationQueue: Queue,
+    private readonly redisService: RedisService,
+    @Inject('StripeClient') private readonly stripeClient: Stripe,
   ) {}
 
   createOAuth2GoogleClient(): OAuth2Client {
@@ -310,13 +309,17 @@ export class AuthService {
     if (user.isEmailConfirmed) {
       throw new BadRequestException('Email is confirmed');
     }
+
     const job = await this.confirmationQueue.add(
       { userId },
       { removeOnFail: true },
     );
+    console.log('aerfghjukhjkafghj');
     await job.finished();
+    console.log('aerfghjukhjkafghj');
     const token = this.generateShortToken();
     const key = `${userId}-confirmation-token`;
+    console.log('aerfghjukhjkafghj');
     await this.redisService.setKey(key, token, ms('15m'));
     await this.mailService.sendConfirmationEmail(user.email, token);
   }

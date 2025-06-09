@@ -12,7 +12,7 @@ import { PUBLIC_KEY } from '../auth/decorators';
 
 @Injectable()
 export class ClientTypeGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
+  constructor(private readonly reflector: Reflector) {}
   canActivate(
     context: ExecutionContext,
   ): boolean | Promise<boolean> | Observable<boolean> {

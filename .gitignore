@@ -4,6 +4,8 @@ sample/**/package-lock.json
 # dependencies
 node_modules/
 
+/.scannerwork
+
 dist/
 
 generated/

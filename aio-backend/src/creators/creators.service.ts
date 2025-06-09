@@ -16,7 +16,6 @@ import { v4 as uuid } from 'uuid';
 import { StorageService } from '../storage/storage.service';
 import { SearchCreatorsDto } from './dto/search-creators.dto';
 import { Prisma } from '../generated/prisma/client';
-import { UpdateCreatorDto } from './dto/update-creator.dto';
 import { CreatorUsernameDto } from './dto/creator-username.dto';
 import { CreatorDescriptionDto } from './dto/creator-description.dto';
 

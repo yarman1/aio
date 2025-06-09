@@ -11,9 +11,8 @@ import { URL } from 'url';
 
 @Injectable()
 export class StorageService {
-  private publicBucketName: string;
-  private privateBucketName: string;
-  private partSize = 20 * 1024 * 1024;
+  private readonly publicBucketName: string;
+  private readonly privateBucketName: string;
 
   constructor(
     configService: ConfigService,

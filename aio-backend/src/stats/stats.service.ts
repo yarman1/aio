@@ -7,6 +7,8 @@ import { subDays } from 'date-fns';
 export class StatsService {
   private readonly logger = new Logger(StatsService.name);
 
+  constructor(private readonly prisma: PrismaService) {}
+
   @Cron('0 2 * * *')
   async aggregateDaily() {
     const prisma = this.prisma;
@@ -157,6 +159,4 @@ export class StatsService {
 
     this.logger.log(`Aggregated stats for ${yesterday.toDateString()}`);
   }
-
-  constructor(private prisma: PrismaService) {}
 }

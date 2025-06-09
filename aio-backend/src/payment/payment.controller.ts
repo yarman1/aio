@@ -7,7 +7,6 @@ import {
   Req,
   Res,
 } from '@nestjs/common';
-import { PaymentService } from './payment.service';
 import { ApiTags } from '@nestjs/swagger';
 import Stripe from 'stripe';
 import { ConfigService } from '@nestjs/config';
@@ -22,7 +21,6 @@ export class PaymentController {
   private readonly connectWebhookSecret: string;
 
   constructor(
-    private readonly paymentService: PaymentService,
     private readonly paymentWebhookService: PaymentWebhookService,
     private readonly configService: ConfigService,
     @Inject('StripeClient') private readonly stripe: Stripe,

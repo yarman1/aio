@@ -12,6 +12,7 @@ import { PaymentModule } from '../payment/payment.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import * as process from 'node:process';
 import { StorageModule } from '../storage/storage.module';
+import { ConfirmationQueue } from './processors/confirmation.processor';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { StorageModule } from '../storage/storage.module';
     AtGuard,
     RolesGuard,
     RecoveryProcessor,
+    ConfirmationQueue,
   ],
   exports: [AtGuard, RolesGuard],
 })

@@ -7,7 +7,7 @@ import ms from 'ms';
 
 @Processor('confirmation-queue')
 export class ConfirmationQueue {
-  constructor(private redisService: RedisService) {}
+  constructor(private readonly redisService: RedisService) {}
 
   @Process()
   async processConfirmationJob(job: Job<EmailConfirmationDto>) {

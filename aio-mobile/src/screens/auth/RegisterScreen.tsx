@@ -6,6 +6,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -25,6 +26,7 @@ const RegisterScreen: React.FC = () => {
   const [email, setEmail] = useState('');
   const [userName, setUserName] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [signUp, { isLoading }] = useSignUpMutation();
   const errorMessage = useAppSelector((s) => s.auth.errorMessage);
 
@@ -42,8 +44,17 @@ const RegisterScreen: React.FC = () => {
   }, [errorMessage]);
 
   const handleRegister = async () => {
-    const tokens = await signUp({ email, userName, password }).unwrap();
-    dispatch(setCredentials(tokens));
+    if (password !== confirmPassword) {
+      Alert.alert('Password Mismatch', 'Passwords do not match');
+      return;
+    }
+
+    try {
+      const tokens = await signUp({ email, userName, password }).unwrap();
+      dispatch(setCredentials(tokens));
+    } catch (err) {
+      // error is handled through Redux slice
+    }
   };
 
   return (
@@ -78,6 +89,13 @@ const RegisterScreen: React.FC = () => {
             secureTextEntry
             value={password}
             onChangeText={setPassword}
+          />
+          <TextInput
+            className="w-full bg-white border border-gray-300 p-4 rounded-xl font-sans"
+            placeholder="Confirm Password"
+            secureTextEntry
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
           />
         </View>
 

@@ -6,7 +6,7 @@ import { subDays } from 'date-fns';
 
 @Injectable()
 export class RecommendationsService {
-  private openai: OpenAI;
+  private readonly openai: OpenAI;
 
   private readonly SYSTEM_PROMPT_CATEGORY = `You are an expert social-media coach.
 Respond with exactly 3-5 numbered points, max 15 words each.
@@ -110,18 +110,8 @@ No paragraphs, no markdown styling, no extra text.`;
     stats: any,
     avgStats: any,
   ): string {
-    const viewsTrend =
-      stats.views > avgStats.avgViews
-        ? '▲'
-        : stats.views < avgStats.avgViews
-          ? '▼'
-          : '→';
-    const likesTrend =
-      stats.likes > avgStats.avgLikes
-        ? '▲'
-        : stats.likes < avgStats.avgLikes
-          ? '▼'
-          : '→';
+    const viewsTrend = this.getTrendSymbol(stats.views, avgStats.avgViews);
+    const likesTrend = this.getTrendSymbol(stats.likes, avgStats.avgLikes);
 
     return `Category: "${categoryName}"
 Date: ${dateStr}
@@ -146,18 +136,14 @@ Return only the numbered list.`;
     stats: any,
     avgStats: any,
   ): string {
-    const createdTrend =
-      stats.subsCreated > avgStats.avgCreated
-        ? '▲'
-        : stats.subsCreated < avgStats.avgCreated
-          ? '▼'
-          : '→';
-    const canceledTrend =
-      stats.subsCanceled > avgStats.avgCanceled
-        ? '▲'
-        : stats.subsCanceled < avgStats.avgCanceled
-          ? '▼'
-          : '→';
+    const createdTrend = this.getTrendSymbol(
+      stats.subsCreated,
+      avgStats.avgCreated,
+    );
+    const canceledTrend = this.getTrendSymbol(
+      stats.subsCanceled,
+      avgStats.avgCanceled,
+    );
 
     return `Plan: "${planName}"
 Date: ${dateStr}
@@ -283,5 +269,11 @@ Return only the numbered list.`;
     });
 
     return res.choices[0].message.content.trim();
+  }
+
+  private getTrendSymbol(current: number, average: number): string {
+    if (current > average) return '▲';
+    if (current < average) return '▼';
+    return '→';
   }
 }

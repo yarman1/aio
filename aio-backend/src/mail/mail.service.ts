@@ -7,7 +7,7 @@ import nodemailer from 'nodemailer';
 export class MailService {
   private readonly transporter: nodemailer.Transporter;
 
-  constructor(private config: ConfigService) {
+  constructor(private readonly config: ConfigService) {
     this.transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
@@ -49,7 +49,7 @@ export class MailService {
       '{{code}}',
       `${code}`,
     );
-
+    console.log('ujiaekrghbuiaerfgbh');
     await this.transporter.sendMail({
       from: '"AIO administration" <aionotification1@gmail.com>',
       to: email,

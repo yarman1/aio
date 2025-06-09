@@ -12,8 +12,8 @@ import { v4 as uuid } from 'uuid';
 @Injectable()
 export class UsersService {
   constructor(
-    private prismaService: PrismaService,
-    private storage: StorageService,
+    private readonly prismaService: PrismaService,
+    private readonly storage: StorageService,
   ) {}
 
   async create(createUserDto: CreateUserDto) {

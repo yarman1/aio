@@ -50,8 +50,8 @@ type RawPostWithSubs = Prisma.PostGetPayload<{
 @Injectable()
 export class PostsService {
   constructor(
-    private prisma: PrismaService,
-    private storageService: StorageService,
+    private readonly prisma: PrismaService,
+    private readonly storageService: StorageService,
   ) {}
 
   async createPost(creatorId: number, dto: CreatePostDto) {
@@ -99,7 +99,7 @@ export class PostsService {
     }
 
     await this.prisma.$transaction(async (tx) => {
-      if (dto.commentsEnabled !== undefined && dto.commentsEnabled === false) {
+      if (dto.commentsEnabled === false) {
         await tx.comment.deleteMany({ where: { postId } });
 
         await tx.post.update({
@@ -107,7 +107,7 @@ export class PostsService {
           data: {
             name: dto.name,
             description: sanitizedDescription,
-            commentsEnabled: dto.commentsEnabled,
+            commentsEnabled: false,
           },
         });
       } else {
@@ -116,6 +116,7 @@ export class PostsService {
           data: {
             name: dto.name,
             description: sanitizedDescription,
+            commentsEnabled: true,
           },
         });
       }

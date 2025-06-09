@@ -7,7 +7,7 @@ import { RedisService } from '../../redis/redis.service';
 
 @Processor('recovery-queue')
 export class RecoveryProcessor {
-  constructor(private redisService: RedisService) {}
+  constructor(private readonly redisService: RedisService) {}
 
   @Process()
   async processRecoveryJob(job: Job<PasswordRecoveryDto>) {

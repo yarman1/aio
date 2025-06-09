@@ -71,7 +71,6 @@ export class PaymentController {
         this.connectWebhookSecret,
       );
     } catch (e) {
-      console.log(e);
       return res
         .status(HttpStatus.BAD_REQUEST)
         .send(`Webhook Error: ${(e as Error).message}`);

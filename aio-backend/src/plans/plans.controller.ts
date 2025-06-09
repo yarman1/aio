@@ -6,8 +6,6 @@ import {
   Delete,
   Param,
   Body,
-  UsePipes,
-  ValidationPipe,
   ParseIntPipe,
 } from '@nestjs/common';
 import { PlansService } from './plans.service';

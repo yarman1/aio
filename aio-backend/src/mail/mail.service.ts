@@ -49,7 +49,6 @@ export class MailService {
       '{{code}}',
       `${code}`,
     );
-    console.log('ujiaekrghbuiaerfgbh');
     await this.transporter.sendMail({
       from: '"AIO administration" <aionotification1@gmail.com>',
       to: email,

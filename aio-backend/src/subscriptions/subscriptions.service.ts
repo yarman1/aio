@@ -90,7 +90,6 @@ export class SubscriptionsService {
   }
 
   async getPortal(userId: number, creatorId: number, clientType: ClientTypes) {
-    console.log(userId, creatorId);
     const sub = await this.prisma.subscription.findFirst({
       where: { creatorId, userId, isEnded: false },
     });

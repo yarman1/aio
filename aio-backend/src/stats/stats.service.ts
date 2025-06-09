@@ -81,7 +81,6 @@ export class StatsService {
           }),
         ],
       );
-      console.log(dayStart);
       await prisma.creatorCategoryStats.upsert({
         where: {
           creatorCategoryId_date: {

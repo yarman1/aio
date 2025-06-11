@@ -50,10 +50,7 @@ const LoginScreen: React.FC = () => {
 
   return (
     <SafeAreaView className="flex-1 bg-background">
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        className="flex-1 justify-center px-6"
-      >
+      <KeyboardAvoidingView className="flex-1 justify-center px-6">
         <Text className="text-4xl font-bold text-center text-primary mb-8 font-sans">
           aio
         </Text>

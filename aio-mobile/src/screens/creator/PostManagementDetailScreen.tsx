@@ -100,7 +100,7 @@ export default function PostManagementDetailScreen() {
   const richTextRef = useRef<RichEditor>(null);
 
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
-  const [mediaUploadKey, setMediaUploadKey] = useState(0); // Force re-render of video player
+  const [mediaUploadKey, setMediaUploadKey] = useState(0);
 
   const [shouldRefreshMedia, setShouldRefreshMedia] = useState(false);
   const { refetch: refreshMedia } = useRefreshMediaQuery(
@@ -319,9 +319,9 @@ export default function PostManagementDetailScreen() {
       if (!uri) {
         return Alert.alert('Error', 'No image selected.');
       }
-      const info = await FileSystem.getInfoAsync(uri);
-      if (!info.exists) {
-        return Alert.alert('Error', 'Image file is not accessible.');
+      if (Platform.OS !== 'web') {
+        const info = await FileSystem.getInfoAsync(uri);
+        if (!info.exists) return Alert.alert('Error', 'Image not accessible.');
       }
       const filename = uri.split('/').pop() || `header_${postId}.jpg`;
       const match = /\.(\w+)$/.exec(filename);
@@ -367,9 +367,9 @@ export default function PostManagementDetailScreen() {
       if (!uri) {
         return Alert.alert('Error', 'No image selected.');
       }
-      const info = await FileSystem.getInfoAsync(uri);
-      if (!info.exists) {
-        return Alert.alert('Error', 'Image file is not accessible.');
+      if (Platform.OS !== 'web') {
+        const info = await FileSystem.getInfoAsync(uri);
+        if (!info.exists) return Alert.alert('Error', 'Image not accessible.');
       }
       const filename = uri.split('/').pop() || `image_${postId}_${order}.jpg`;
       const match = /\.(\w+)$/.exec(filename);
@@ -467,9 +467,9 @@ export default function PostManagementDetailScreen() {
       if (!uri) {
         return Alert.alert('Error', 'No image selected.');
       }
-      const info = await FileSystem.getInfoAsync(uri);
-      if (!info.exists) {
-        return Alert.alert('Error', 'Image file is not accessible.');
+      if (Platform.OS !== 'web') {
+        const info = await FileSystem.getInfoAsync(uri);
+        if (!info.exists) return Alert.alert('Error', 'Image not accessible.');
       }
       const filename = uri.split('/').pop() || `preview_${postId}.jpg`;
       const match = /\.(\w+)$/.exec(filename);
@@ -549,9 +549,10 @@ export default function PostManagementDetailScreen() {
         return;
       }
 
-      const info = await FileSystem.getInfoAsync(uri);
-      if (!info.exists) {
-        return Alert.alert('Error', 'Selected file is not accessible.');
+      if (Platform.OS !== 'web') {
+        const info = await FileSystem.getInfoAsync(uri);
+        if (!info.exists)
+          return Alert.alert('Error', 'Selected file not accessible.');
       }
 
       const { url } = await initiateMediaUpload({

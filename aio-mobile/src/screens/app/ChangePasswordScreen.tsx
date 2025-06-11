@@ -28,7 +28,11 @@ export default function ChangePasswordScreen() {
 
   useEffect(() => {
     if (!currentUser) {
-      navigation.goBack();
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.navigate('Settings');
+      }
     }
   }, [currentUser, navigation]);
 

@@ -7,6 +7,8 @@ import {
   Pressable,
   ActivityIndicator,
   StyleSheet,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import {
@@ -63,27 +65,38 @@ export default function CreatorManagementRecommendationsScreen() {
   );
 
   useEffect(() => {
-    if (selectedCategoryId !== null) {
-      fetchCategoryRec();
-    }
+    if (selectedCategoryId !== null) fetchCategoryRec();
   }, [selectedCategoryId, categoryDate, fetchCategoryRec]);
 
   useEffect(() => {
-    if (selectedPlanId !== null) {
-      fetchPlanRec();
-    }
+    if (selectedPlanId !== null) fetchPlanRec();
   }, [selectedPlanId, planDate, fetchPlanRec]);
 
   if (loadingCats || loadingPlans) {
     return (
       <SafeAreaView style={styles.center}>
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" color="#007AFF" />
       </SafeAreaView>
     );
   }
 
+  const STATUS_BAR_HEIGHT = Platform.select({
+    android: StatusBar.currentHeight ?? 0,
+    web: 0,
+  });
+
   return (
     <SafeAreaView style={styles.container}>
+      {Platform.OS !== 'web' && (
+        <>
+          <StatusBar
+            translucent
+            backgroundColor="transparent"
+            barStyle="dark-content"
+          />
+          <View style={{ height: STATUS_BAR_HEIGHT }} />
+        </>
+      )}
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.sectionTitle}>Category Recommendations</Text>
         {categories && categories.length === 0 && (
@@ -94,12 +107,25 @@ export default function CreatorManagementRecommendationsScreen() {
           <Text style={styles.dateLabel}>Date: {categoryDate}</Text>
           <Pressable
             style={styles.dateButton}
-            onPress={() => setShowCategoryPicker(true)}
+            onPress={() =>
+              Platform.OS === 'web' ? null : setShowCategoryPicker(true)
+            }
           >
             <Text style={styles.dateButtonText}>Select Date</Text>
           </Pressable>
         </View>
-        {showCategoryPicker && (
+        {Platform.OS === 'web' ? (
+          <View style={styles.webDateInputContainer}>
+            {/* @ts-ignore */}
+            <input
+              type="date"
+              value={categoryDate}
+              max={yesterdayString}
+              onChange={(e) => setCategoryDate(e.target.value)}
+              style={styles.webDateInput}
+            />
+          </View>
+        ) : showCategoryPicker ? (
           <DateTimePicker
             value={new Date(categoryDate)}
             mode="date"
@@ -115,31 +141,24 @@ export default function CreatorManagementRecommendationsScreen() {
                   ),
                 );
                 setCategoryDate(formatDateYYYYMMDD(utc));
-                if (selectedCategoryId !== null) {
-                  setSelectedCategoryId((id) => id);
-                }
               }
             }}
           />
-        )}
+        ) : null}
 
         {categories?.map((cat) => (
           <View key={cat.id} style={styles.itemContainer}>
             <Text style={styles.itemName}>{cat.name}</Text>
-
             <Pressable
               style={styles.button}
-              onPress={() => {
-                setSelectedCategoryId(cat.id);
-              }}
+              onPress={() => setSelectedCategoryId(cat.id)}
             >
               <Text style={styles.buttonText}>Get Recommendation</Text>
             </Pressable>
-
             {selectedCategoryId === cat.id && (
               <View style={styles.recContainer}>
                 {fetchingCategoryRec ? (
-                  <ActivityIndicator size="small" />
+                  <ActivityIndicator size="small" color="#007AFF" />
                 ) : categoryRec?.recommendation ? (
                   <Text style={styles.recText}>
                     {categoryRec.recommendation}
@@ -151,7 +170,6 @@ export default function CreatorManagementRecommendationsScreen() {
         ))}
 
         <View style={styles.separator} />
-
         <Text style={styles.sectionTitle}>Plan Recommendations</Text>
         {plans && plans.length === 0 && (
           <Text style={styles.emptyText}>You have no plans yet.</Text>
@@ -161,12 +179,25 @@ export default function CreatorManagementRecommendationsScreen() {
           <Text style={styles.dateLabel}>Date: {planDate}</Text>
           <Pressable
             style={styles.dateButton}
-            onPress={() => setShowPlanPicker(true)}
+            onPress={() =>
+              Platform.OS === 'web' ? null : setShowPlanPicker(true)
+            }
           >
             <Text style={styles.dateButtonText}>Select Date</Text>
           </Pressable>
         </View>
-        {showPlanPicker && (
+        {Platform.OS === 'web' ? (
+          <View style={styles.webDateInputContainer}>
+            {/* @ts-ignore */}
+            <input
+              type="date"
+              value={planDate}
+              max={yesterdayString}
+              onChange={(e) => setPlanDate(e.target.value)}
+              style={styles.webDateInput}
+            />
+          </View>
+        ) : showPlanPicker ? (
           <DateTimePicker
             value={new Date(planDate)}
             mode="date"
@@ -182,31 +213,24 @@ export default function CreatorManagementRecommendationsScreen() {
                   ),
                 );
                 setPlanDate(formatDateYYYYMMDD(utc));
-                if (selectedPlanId !== null) {
-                  setSelectedPlanId((id) => id);
-                }
               }
             }}
           />
-        )}
+        ) : null}
 
         {plans?.map((plan) => (
           <View key={plan.id} style={styles.itemContainer}>
             <Text style={styles.itemName}>{plan.name}</Text>
-
             <Pressable
               style={styles.button}
-              onPress={() => {
-                setSelectedPlanId(plan.id);
-              }}
+              onPress={() => setSelectedPlanId(plan.id)}
             >
               <Text style={styles.buttonText}>Get Recommendation</Text>
             </Pressable>
-
             {selectedPlanId === plan.id && (
               <View style={styles.recContainer}>
                 {fetchingPlanRec ? (
-                  <ActivityIndicator size="small" />
+                  <ActivityIndicator size="small" color="#007AFF" />
                 ) : planRec?.recommendation ? (
                   <Text style={styles.recText}>{planRec.recommendation}</Text>
                 ) : null}
@@ -224,71 +248,50 @@ const styles = StyleSheet.create({
   scroll: { padding: 16, paddingBottom: 32 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 12,
-  },
+  sectionTitle: { fontSize: 20, fontWeight: '700', marginBottom: 12 },
   emptyText: {
     fontSize: 14,
     fontStyle: 'italic',
     marginBottom: 16,
     color: '#555',
   },
-  separator: {
-    height: 1,
-    backgroundColor: '#EEE',
-    marginVertical: 24,
-  },
+  separator: { height: 1, backgroundColor: '#EEE', marginVertical: 24 },
 
-  dateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  dateLabel: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '600',
-  },
+  dateRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  dateLabel: { flex: 1, fontSize: 14, fontWeight: '600' },
   dateButton: {
     backgroundColor: '#007bff',
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 6,
   },
-  dateButtonText: {
-    color: '#fff',
-    fontSize: 14,
+  dateButtonText: { color: '#fff', fontSize: 14 },
+
+  webDateInputContainer: { marginBottom: 16 },
+  webDateInput: {
+    width: 200,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#CCC',
+    borderRadius: 6,
+    backgroundColor: '#FAFAFA',
   },
 
-  itemContainer: {
-    marginBottom: 24,
-  },
-  itemName: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
+  itemContainer: { marginBottom: 24 },
+  itemName: { fontSize: 16, fontWeight: '600', marginBottom: 6 },
   button: {
     backgroundColor: '#007bff',
     paddingVertical: 10,
     borderRadius: 6,
     alignItems: 'center',
     marginBottom: 8,
+    cursor: Platform.OS === 'web' ? 'pointer' : undefined,
   },
-  buttonText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '600',
-  },
+  buttonText: { color: '#fff', fontSize: 15, fontWeight: '600' },
   recContainer: {
     borderLeftWidth: 3,
     borderLeftColor: '#007bff',
     paddingLeft: 12,
   },
-  recText: {
-    fontSize: 14,
-    color: '#333',
-  },
+  recText: { fontSize: 14, color: '#333' },
 });

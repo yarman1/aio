@@ -40,7 +40,11 @@ export default function SettingsScreen() {
       if (result.canceled || !result.assets?.[0]) return;
 
       const { uri } = result.assets[0];
-      const info = await FileSystem.getInfoAsync(uri);
+      const info =
+        Platform.OS === 'web'
+          ? { exists: true }
+          : await FileSystem.getInfoAsync(uri);
+
       if (!info.exists) {
         return Alert.alert('Error', 'Image file is not accessible.');
       }

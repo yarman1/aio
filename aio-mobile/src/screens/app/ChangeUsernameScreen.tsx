@@ -24,7 +24,11 @@ export default function ChangeUsernameScreen() {
 
   useEffect(() => {
     if (!currentUser) {
-      navigation.goBack();
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.navigate('Settings');
+      }
     }
   }, [currentUser, navigation]);
 
@@ -34,7 +38,11 @@ export default function ChangeUsernameScreen() {
     }
     try {
       await updateUserInfo({ userName: username.trim() }).unwrap();
-      navigation.goBack();
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.navigate('Settings');
+      }
     } catch (err: any) {
       console.error(err);
       Alert.alert('Error', err.data?.message || 'Failed to update username.');

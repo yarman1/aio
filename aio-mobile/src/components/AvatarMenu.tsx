@@ -18,7 +18,7 @@ import { CommonActions, useNavigation } from '@react-navigation/native';
 import type { AppStackNavigationProp } from '../navigation/AppNavigator';
 
 const STATUS_BAR_HEIGHT =
-  Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 44;
+  Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0;
 
 export function AvatarMenu({
   topOffset = STATUS_BAR_HEIGHT + 10,
@@ -36,11 +36,18 @@ export function AvatarMenu({
     dispatch(logout());
     logoutMutation();
     dispatch(baseAPI.util.resetApiState());
-    await AsyncStorage.clear().catch(() => {});
+
+    if (Platform.OS === 'android') {
+      await AsyncStorage.clear().catch(() => {});
+    } else {
+      window.localStorage.clear();
+    }
+
     navigation.dispatch(
       CommonActions.reset({ index: 0, routes: [{ name: 'Auth' }] }),
     );
   };
+
   const handleSettings = () => {
     setVisible(false);
     navigation.navigate('Settings');
@@ -65,8 +72,8 @@ export function AvatarMenu({
         visible={visible}
         transparent
         animationType="fade"
-        presentationStyle="overFullScreen"
-        statusBarTranslucent
+        // only android supports these props; web ignores them
+        {...(Platform.OS === 'android' ? { statusBarTranslucent: true } : {})}
         onRequestClose={() => setVisible(false)}
       >
         <View style={StyleSheet.absoluteFill}>

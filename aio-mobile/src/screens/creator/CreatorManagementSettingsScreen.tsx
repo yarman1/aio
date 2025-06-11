@@ -89,8 +89,10 @@ export default function CreatorManagementSettingsScreen() {
       });
       if (res.canceled || !res.assets?.[0]) return;
       const { uri } = res.assets[0];
-      const info = await FileSystem.getInfoAsync(uri);
-      if (!info.exists) return Alert.alert('Error', 'Image not accessible.');
+      if (Platform.OS !== 'web') {
+        const info = await FileSystem.getInfoAsync(uri);
+        if (!info.exists) return Alert.alert('Error', 'Image not accessible.');
+      }
 
       const fd = new FormData();
       fd.append('avatar', {

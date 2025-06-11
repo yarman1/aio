@@ -236,10 +236,17 @@ export default function PostDetailScreen() {
         <Text style={styles.title}>{post.name}</Text>
 
         <View style={styles.descriptionCard}>
-          <RenderHTML
-            contentWidth={width - 32}
-            source={{ html: post.description }}
-          />
+          {Platform.OS === 'web' ? (
+            <div
+              style={{ width: width - 32 }}
+              dangerouslySetInnerHTML={{ __html: post.description }}
+            />
+          ) : (
+            <RenderHTML
+              contentWidth={width - 32}
+              source={{ html: post.description }}
+            />
+          )}
         </View>
 
         {post.images.length > 0 && (
@@ -300,15 +307,28 @@ export default function PostDetailScreen() {
                 {Math.floor(audioProgress.durationMillis / 1000)}s
               </Text>
             </View>
-            <Slider
-              style={{ width: '100%', height: 40 }}
-              minimumValue={0}
-              maximumValue={audioProgress.durationMillis}
-              value={audioProgress.positionMillis}
-              onSlidingComplete={(pos) =>
-                soundRef.current?.setPositionAsync(pos)
-              }
-            />
+            {Platform.OS === 'web' ? (
+              <input
+                type="range"
+                min={0}
+                max={audioProgress.durationMillis}
+                value={audioProgress.positionMillis}
+                onChange={(e) =>
+                  soundRef.current?.setPositionAsync(Number(e.target.value))
+                }
+                style={{ width: '100%' }}
+              />
+            ) : (
+              <Slider
+                style={{ width: '100%', height: 40 }}
+                minimumValue={0}
+                maximumValue={audioProgress.durationMillis}
+                value={audioProgress.positionMillis}
+                onSlidingComplete={(pos) =>
+                  soundRef.current?.setPositionAsync(pos)
+                }
+              />
+            )}
             <Text style={styles.percentText}>
               {Math.round(
                 (audioProgress.positionMillis / audioProgress.durationMillis) *

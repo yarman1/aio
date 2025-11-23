@@ -19,13 +19,13 @@ export class CredentialsService {
   ): Promise<{ clientId: string; clientSecret: string }> {
     const plainSecret = crypto.randomBytes(32).toString('hex');
 
-    const saltRounds = 10;
-    const hashedSecret = await bcrypt.hash(plainSecret, saltRounds);
+    // const saltRounds = 10;
+    // const hashedSecret = await bcrypt.hash(plainSecret, saltRounds);
 
     const created = await this.prisma.creatorApiCredential.create({
       data: {
         creatorId,
-        clientSecret: hashedSecret,
+        clientSecret: plainSecret,
       },
     });
 

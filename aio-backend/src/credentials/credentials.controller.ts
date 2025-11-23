@@ -88,7 +88,7 @@ export class CredentialsController {
     const creatorId = req.creatorId;
     const followers = await this.prismaService.follow.findMany({
       where: { creatorId },
-      include: {
+      select: {
         user: {
           select: {
             id: true,
@@ -98,7 +98,7 @@ export class CredentialsController {
         },
       },
     });
-    res.send(followers);
+    res.send(followers.map((user) => user.user));
   }
 
   @Public()
@@ -120,6 +120,7 @@ export class CredentialsController {
         isEnded: true,
         createdAt: true,
         updatedAt: true,
+        planId: true,
       },
     });
     if (!subscription) {

@@ -29,6 +29,14 @@ type AppNavProp = NativeStackNavigationProp<AppStackParamList>;
 type PostsRoute = RouteProp<CreatorTabsParamList, 'Posts'>;
 
 export default function CreatorPostsScreen() {
+  const getPreview = (html?: string, length = 100) => {
+    const text = (html ?? '') // ensure it's a string
+      .replace(/<[^>]+>/g, '') // strip HTML tags
+      .trim(); // optional: remove leading/trailing whitespace
+
+    if (text.length <= length) return text;
+    return text.slice(0, length) + '…';
+  };
   const { creatorId } = useRoute<PostsRoute>().params;
 
   const navigation = useNavigation<AppNavProp>();
@@ -109,12 +117,7 @@ export default function CreatorPostsScreen() {
     >
       <View style={{ flex: 1 }}>
         <Text style={styles.postTitle}>{item.name}</Text>
-        <Text style={styles.postDesc}>
-          {item.description
-            .replace(/<[^>]+>/g, '') // remove HTML tags
-            .slice(0, 100) +
-            (item.description.replace(/<[^>]+>/g, '').length > 100 ? '…' : '')}
-        </Text>
+        <Text style={styles.postDesc}>{getPreview(item.description, 100)}</Text>
         <View style={styles.meta}>
           <Text style={styles.category}>{item.category.name}</Text>
           <Text style={styles.type}>{item.type}</Text>
